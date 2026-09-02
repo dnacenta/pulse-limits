@@ -3,11 +3,12 @@
 #
 #   pulse-limits install       link the plugin into SwiftBar and start it
 #   pulse-limits uninstall     unlink it, drop cache and settings
-#   pulse-limits theme NAME    crt | modern | cyber | term | synth | analog
+#   pulse-limits theme NAME    crt | modern | cyber | synth | analog
 #   pulse-limits refresh       force a live fetch now
 #   pulse-limits open          show or hide the monitor
 #   pulse-limits status        print the current reading as JSON
 #   pulse-limits doctor        check every step of the chain (paste this when asking for help)
+#   pulse-limits raw           print the last raw usage reply from the API (no secrets in it)
 #
 # Works from a git checkout (this file next to pulse-limits.5m.sh) and from a
 # Homebrew install (bin/pulse-limits with the plugin under opt/pulse-limits/libexec,
@@ -95,7 +96,13 @@ case "${1:-help}" in
         *)   bad "HTTP $code: $(head -c 240 "$tmp" | tr '\n' ' ')" ;;
       esac; rm -f "$tmp" "$tmp.err"
     fi
+    echo "last raw reply (shape digest)"
+    if [[ -f "$CACHE_DIR/usage.json" ]]; then
+      ok "$(jq -c '{keys: (keys | join(",")), five_hour: .five_hour.utilization, seven_day: .seven_day.utilization,
+                    limits: [.limits[]? | {kind, percent, model: .scope.model.display_name}]}' "$CACHE_DIR/usage.json" 2>/dev/null || echo 'not JSON')"
+    else bad "no reply cached yet"; fi
     echo "activity"; ok "$("$LIB/bin/pulse-popover" --activity 2>&1 || echo 'helper failed')" ;;
+  raw)     jq . "$CACHE_DIR/usage.json" ;;
   -h|--help|help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "pulse-limits: unknown command '$1' (try: pulse-limits help)" >&2; exit 64 ;;
 esac

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # <swiftbar.title>PulseLimits</swiftbar.title>
-# <swiftbar.version>v0.3.2</swiftbar.version>
+# <swiftbar.version>v0.3.3</swiftbar.version>
 # <swiftbar.author>Daniel Nacenta</swiftbar.author>
 # <swiftbar.desc>Your Claude plan limits as a retro patient monitor: the heart rate is your usage.</swiftbar.desc>
 # <swiftbar.dependencies>bash,jq,curl</swiftbar.dependencies>
@@ -35,7 +35,7 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/pulse-limits"
 CACHE="$CACHE_DIR/usage.json"
 HISTORY="$CACHE_DIR/history.tsv"
 MIN_INTERVAL=90        # seconds between live calls
-THEMES="crt modern cyber term synth analog"
+THEMES="crt modern cyber synth analog"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pulse-limits"
 THEME_FILE="$CONFIG_DIR/theme"                     # chosen from the right-click menu; default crt
 THEME=$(cat "$THEME_FILE" 2>/dev/null || echo crt)
@@ -132,7 +132,7 @@ if [[ -n "$token" ]] && (( cache_age > MIN_INTERVAL )) && (( now >= backoff_unti
            # trend history: one row per live reading, pruned to HISTORY_HOURS
            jq -r --arg now "$now" '
              def lim(k): (first(.limits[]? | select(.kind == k)) // null);
-             def pct(k; legacy): (if lim(k) != null then (lim(k).percent // 0) elif legacy != null then (legacy.utilization // 0) else 0 end);
+             def pct(k; legacy): (if lim(k) != null then (lim(k).percent // legacy.utilization // 0) elif legacy != null then (legacy.utilization // 0) else 0 end);
              [$now, (pct("session"; .five_hour) + 0.5 | floor), (pct("weekly_all"; .seven_day) + 0.5 | floor)] | @tsv' \
               "$CACHE" >> "$HISTORY"
            awk -F'\t' -v cut="$(( now - HISTORY_HOURS * 3600 ))" '$1 >= cut' "$HISTORY" > "$HISTORY.tmp" && mv -f "$HISTORY.tmp" "$HISTORY"
@@ -162,7 +162,7 @@ if (( have_data )); then
     # ones the five_hour / seven_day blocks. Read whichever is there, limits[] first.
     def lim(k): (first(.limits[]? | select(.kind == k)) // null);
     def win(name; k; legacy):
-      (if lim(k) != null then { label: name, pct: (lim(k).percent // 0), resets: lim(k).resets_at }
+      (if lim(k) != null then { label: name, pct: (lim(k).percent // legacy.utilization // 0), resets: (lim(k).resets_at // legacy.resets_at) }
        elif legacy != null then { label: name, pct: (legacy.utilization // 0), resets: legacy.resets_at }
        else empty end);
     ([ win("SESSION"; "session"; .five_hour), win("WEEK"; "weekly_all"; .seven_day) ]

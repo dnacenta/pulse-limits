@@ -117,9 +117,9 @@
   }
   function bpmNow() {
     if (!alive) return 0;
-    if (act.tok === null) return 60;
+    if (act.tok === null) return 60;               // unknown (no helper): a resting pulse
     if (act.tok > 0) return Math.min(180, 60 + 60 * Math.log10(1 + act.tok / 100));
-    return act.idle < 180 ? 52 : 40;
+    return 0;                                      // nothing streaming: flat line
   }
   const busy = () => act.tok !== null && act.tok > 0;
   function activityLabel() {
@@ -132,7 +132,7 @@
     if (!alive) return ['? ' + D.status, 'dead'];
     if (D.status) return ['○ ' + D.status, 'stale'];
     if (fresh()) return [(Math.floor(t / 1000) % 2 ? '● ' : '  ') + 'LIVE', 'ok'];
-    return ['○ ' + hhmm(D.fetched * 1000), 'old'];
+    return ['', 'old'];
   }
   function buckets(n) {                     // 12 h of session history in n buckets (max per bucket, -1 empty)
     const now = Date.now(), bucketMs = 12 * 3600 * 1000 / n, max = new Array(n).fill(-1);
@@ -412,47 +412,7 @@
     txt(alive ? 'UPD ' + short(ageSec()) + ' · RESET ' + nextReset() : (D.hint || ''), W - 16, H - 8, '600 10px ' + F, D.status ? P.yl : P.dim, 'right', 1.5);
   }};
 
-  // ---- 4. TERM: a Nord TUI ---------------------------------------------------------------
-  THEMES.term = { pixel: false, ecg: 440, draw(t, dt) {
-    const P = { bg: '#2e3440', fg: '#d8dee9', dim: '#4c566a', dim2: '#7b88a1', green: '#a3be8c', yellow: '#ebcb8b', red: '#bf616a', cyan: '#88c0d0', blue: '#81a1c1', mag: '#b48ead' };
-    const tone = p => p >= 85 ? P.red : p >= 60 ? P.yellow : P.green;
-    const F = '12px ui-monospace, Menlo, monospace', LH = 18, X0 = 12;
-    ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
-    const cw = measure('M', F), cols = Math.floor((W - 2 * X0) / cw);
-    const row = (r, segs) => { let cx = X0; for (const [s, c] of segs) { txt(s, cx, 20 + r * LH, F, c); cx += s.length * cw; } };
-    const bar = (label, pct, extra, r) => {
-      const n = 22, f = Math.round(n * pct / 100);
-      row(r, [['│ ', P.dim], [label.padEnd(8).toLowerCase(), P.fg], [String(pct).padStart(3) + '% ', tone(pct)], ['[', P.dim],
-              ['|'.repeat(f), tone(pct)], ['.'.repeat(n - f), P.dim], [']  ', P.dim], [extra.toLowerCase(), P.dim2]]);
-      txt('│', X0 + (cols - 1) * cw, 20 + r * LH, F, P.dim);
-    };
-    const line = (r, left, right) => {
-      const l = '─ ' + left + ' ', rt = right ? ' ' + right + ' ─' : '─';
-      row(r, [['┌', P.dim], [l, P.cyan], ['─'.repeat(Math.max(0, cols - 2 - l.length - rt.length)), P.dim], [rt, P.mag], ['┐', P.dim]]);
-    };
-    const mid = (r, left) => { const l = '─ ' + left + ' '; row(r, [['├', P.dim], [l, P.cyan], ['─'.repeat(Math.max(0, cols - 2 - l.length)), P.dim], ['┤', P.dim]]); };
-    const [st] = statusInfo(t);
-    line(0, 'pulse-limits', (D.plan || '').toLowerCase());
-    if (alive) bar('SESSION', sessionPct, resetText(session).replace('RESET', 'resets in'), 1); else row(1, [['│ ', P.dim], ['? ' + D.status.toLowerCase() + '  ' + (D.hint || '').toLowerCase(), P.red]]);
-    others.slice(0, 3).forEach((wd, i) => bar(wd.label, Math.round(wd.pct), resetText(wd).replace('RESET', 'resets in'), 2 + i));
-    let r = 2 + Math.min(others.length, 3);
-    mid(r, 'activity  ' + (activityLabel() || '').toLowerCase()); r++;
-    const boxTop = 20 + r * LH - 12, boxRows = 5;
-    for (let i = 0; i < boxRows; i++) { txt('│', X0, 20 + (r + i) * LH, F, P.dim); txt('│', X0 + (cols - 1) * cw, 20 + (r + i) * LH, F, P.dim); }
-    ECG.init(Math.floor((cols - 4) * cw)); ECG.draw(X0 + 2 * cw, boxTop + boxRows * LH / 2 + 8, 30, { color: busy() ? P.green : P.dim2, width: 1.5, fade: true, dot: false });
-    if (alive) txt(sessionPct + '%', X0 + (cols - 2) * cw, boxTop + 34, '700 28px ui-monospace, Menlo, monospace', tone(sessionPct), 'right');
-    r += boxRows;
-    mid(r, 'session · 12h'); r++;
-    const b = buckets(cols - 4), blocks = ' ▁▂▃▄▅▆▇█';
-    let cx = X0 + 2 * cw; txt('│', X0, 20 + r * LH, F, P.dim); txt('│', X0 + (cols - 1) * cw, 20 + r * LH, F, P.dim);
-    for (const v of b) { const ch = v < 0 ? '·' : blocks[Math.min(8, Math.max(1, Math.round(v * 8 / 100)))]; txt(ch, cx, 20 + r * LH, F, v < 0 ? P.dim : tone(v)); cx += cw; }
-    r++;
-    const foot = ' ' + st.toLowerCase() + (alive ? '  updated ' + short(ageSec()).toLowerCase() + ' ago  next reset ' + nextReset() : '') + ' ';
-    row(r, [['└', P.dim], ['─', P.dim], [foot, fresh() ? P.green : D.status ? P.yellow : P.dim2], ['─'.repeat(Math.max(0, cols - 3 - foot.length)), P.dim], ['┘', P.dim]]);
-    if (Math.floor(t / 500) % 2 === 0) txt('▮', X0 + (cols - 1) * cw - 2, 20 + (r + 1) * LH, F, P.fg);
-  }};
-
-  // ---- 5. SYNTH: synthwave sunset ------------------------------------------------------
+  // ---- 4. SYNTH: synthwave sunset ------------------------------------------------------
   THEMES.synth = { pixel: false, ecg: 300, draw(t, dt) {
     const P = { pink: '#ff2d95', cyan: '#22e6ff', purple: '#1a0533', lav: '#b39ddb', white: '#ffffff', sun1: '#ffe066', sun2: '#ff2d95' };
     const tone = p => p >= 85 ? '#ff4d4d' : p >= 60 ? '#ffb347' : P.cyan;
@@ -509,7 +469,7 @@
     }
   }};
 
-  // ---- 6. ANALOG: VU meters and a chart recorder ---------------------------------------------
+  // ---- 5. ANALOG: VU meters and a chart recorder ---------------------------------------------
   THEMES.analog = { pixel: false, ecg: 448, needle: 0, needles: [0, 0, 0], draw(t, dt) {
     const P = { case: '#1b1917', cream: '#efe6cf', cream2: '#e4d9bd', ink: '#1c1a17', red: '#c8322b', dim: '#8a8069', brass: '#c9a227', blue: '#9db4c6' };
     const F = '"Helvetica Neue", Helvetica, Arial, sans-serif';

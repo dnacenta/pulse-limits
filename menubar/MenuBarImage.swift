@@ -27,7 +27,11 @@ let font = NSFont.menuBarFont(ofSize: 0)
 let label = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: textColor])
 let textSize = label.size()
 let ring: CGFloat = 15, stroke: CGFloat = 3.5, gap: CGFloat = 5, height: CGFloat = 18
-let width = ceil(textSize.width) + (text.isEmpty ? 0 : gap) + ring
+// SwiftBar shows this image left of an (empty) title, and AppKit keeps the image-to-title
+// gap and the title inset on the right. A matching transparent pad on the left keeps the
+// item visually centred in its highlight.
+let lead: CGFloat = 6
+let width = lead + ceil(textSize.width) + (text.isEmpty ? 0 : gap) + ring
 let scale: CGFloat = 2
 
 let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(width * scale), pixelsHigh: Int(height * scale),
@@ -39,7 +43,7 @@ NSGraphicsContext.current = ctx
 ctx.cgContext.scaleBy(x: scale, y: scale)
 ctx.shouldAntialias = true
 
-label.draw(at: NSPoint(x: 0, y: (height - textSize.height) / 2))
+label.draw(at: NSPoint(x: lead, y: (height - textSize.height) / 2))
 
 let center = NSPoint(x: width - ring / 2, y: height / 2)
 let radius = ring / 2 - stroke / 2

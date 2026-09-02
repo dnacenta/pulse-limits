@@ -32,7 +32,8 @@ Green, amber from 60 %, red from 85 %.
 - **A heartbeat that means something.** Its rate follows what Claude Code is doing
   right now, measured from the transcripts it writes locally: output tokens per
   minute across every open session, and how long since anything happened.
-  `3.4K TOK/MIN · 7 SESSIONS` with a racing trace, or `IDLE 45M` with a slow one.
+  `3.4K TOK/MIN · 7 SESSIONS` with a racing trace; `IDLE 45M` and a flat line
+  when nothing is running.
 - **The session window** as a big number, its reset countdown, and a bar.
 - **The other windows** as rings: the week, plus any per-model weekly cap your
   plan carries.
@@ -46,20 +47,22 @@ Right-click for a plain text menu and the theme switcher.
 
 ## Themes
 
-Six looks, same data. Right-click the menu bar item, open **THEME**, pick one.
+Five looks, same data. Right-click the menu bar item, open **THEME**, pick one.
 
-| CRT | Modern | Analog |
-|:---:|:---:|:---:|
-| <img src="docs/crt.png" width="300" alt="CRT theme"> | <img src="docs/modern.png" width="300" alt="Modern theme"> | <img src="docs/analog.png" width="300" alt="Analog theme"> |
-| Phosphor monitor, scanlines, 5x7 pixel font | A macOS widget, follows light and dark mode | VU meter, round gauges, chart-recorder strip |
+| CRT | Modern |
+|:---:|:---:|
+| <img src="docs/crt.png" width="420" alt="CRT theme"> | <img src="docs/modern.png" width="420" alt="Modern theme"> |
+| Phosphor monitor, scanlines, 5x7 pixel font | A macOS widget, follows light and dark mode |
 
-<p align="center">
-  <img src="themes-preview.png" width="700" alt="All six themes: crt, modern, cyber, term, synth, analog">
-</p>
+| Cyber | Synth |
+|:---:|:---:|
+| <img src="docs/cyber.png" width="420" alt="Cyber theme"> | <img src="docs/synth.png" width="420" alt="Synth theme"> |
+| Neon HUD, chromatic-aberration digits | Sunset, perspective grid, the trend as a skyline |
 
-Also **cyber** (neon HUD with chromatic-aberration digits), **term** (a Nord-palette
-TUI with `[|||...]` meters) and **synth** (sunset, perspective grid, the trend as a
-city skyline).
+| Analog | |
+|:---:|:---:|
+| <img src="docs/analog.png" width="420" alt="Analog theme"> | |
+| VU meter, round gauges, chart-recorder strip | |
 
 ## Install
 
@@ -95,7 +98,7 @@ is safe to re-run and updates in place. Remove with `pulse-limits uninstall`.
 ```
 pulse-limits install       link the plugin into SwiftBar and start it
 pulse-limits uninstall     unlink it, drop cache and settings
-pulse-limits theme NAME    crt | modern | cyber | term | synth | analog
+pulse-limits theme NAME    crt | modern | cyber | synth | analog
 pulse-limits refresh       force a live fetch now
 pulse-limits open          show or hide the monitor
 pulse-limits status        print the current reading as JSON
