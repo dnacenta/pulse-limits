@@ -7,6 +7,7 @@
 #   pulse-limits refresh       force a live fetch now
 #   pulse-limits open          show or hide the monitor
 #   pulse-limits status        print the current reading as JSON
+#   pulse-limits doctor        check every step of the chain (paste this when asking for help)
 #
 # Works from a git checkout (this file next to pulse-limits.5m.sh) and from a
 # Homebrew install (bin/pulse-limits with the plugin under opt/pulse-limits/libexec,
@@ -49,6 +50,52 @@ case "${1:-help}" in
   refresh) "$LIB/$PLUGIN" --reset; refresh; echo "refreshing" ;;
   open)    exec "$LIB/open-monitor.sh" ;;
   status)  "$LIB/$PLUGIN" --payload | jq . ;;
+  doctor)
+    ok() { printf '  ok       %s\n' "$*"; }; bad() { printf '  PROBLEM  %s\n' "$*"; }
+    echo "PulseLimits doctor  ($(date '+%Y-%m-%d %H:%M'))"
+    echo "system"; ok "macOS $(sw_vers -productVersion) $(uname -m), bash $BASH_VERSION"
+    readlink -f / >/dev/null 2>&1 && ok "readlink -f works" || bad "readlink -f unsupported (macOS older than 12.3): symlinked plugin will not find its files"
+    for tool in jq curl security; do command -v "$tool" >/dev/null && ok "$tool: $(command -v "$tool")" || bad "$tool is missing"; done
+    echo "files"; ok "lib: $LIB"
+    for f in pulse-limits.5m.sh open-monitor.sh panel.html bin/pulse-popover bin/pulse-menubar; do [[ -e "$LIB/$f" ]] && ok "$f" || bad "$f missing (run ./build.sh for bin/*)"; done
+    echo "swiftbar"
+    [[ -d /Applications/SwiftBar.app ]] && ok "SwiftBar $(defaults read /Applications/SwiftBar.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null) installed" || bad "SwiftBar not in /Applications"
+    pgrep -xq SwiftBar && ok "SwiftBar running" || bad "SwiftBar not running (open -a SwiftBar)"
+    link="$(plugin_dir)/$PLUGIN"
+    if [[ -L "$link" ]]; then [[ -e "$link" ]] && ok "plugin linked: $link -> $(readlink "$link")" || bad "plugin link is dangling: $link"; else bad "plugin not linked in $(plugin_dir) (run: pulse-limits install)"; fi
+    echo "credentials"
+    creds=""; src=""
+    if creds=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null); then src="Keychain item 'Claude Code-credentials'"
+    elif [[ -f "$HOME/.claude/.credentials.json" ]]; then creds=$(cat "$HOME/.claude/.credentials.json"); src="file ~/.claude/.credentials.json"
+    else bad "no Claude Code login found (no Keychain item, no ~/.claude/.credentials.json). Run 'claude' and log in with a claude.ai account."; fi
+    tok=""
+    if [[ -n "$creds" ]]; then
+      ok "source: $src"
+      if printf '%s' "$creds" | jq -e '.claudeAiOauth' >/dev/null 2>&1; then
+        printf '%s' "$creds" | jq -r '.claudeAiOauth | "  ok       token: \(if (.accessToken // "") != "" then "present, \(.accessToken|length) chars" else "MISSING" end)\n  ok       plan: \(.subscriptionType // "?")   tier: \(.rateLimitTier // "?")\n  ok       expires: \(if .expiresAt then (.expiresAt/1000|todate) else "?" end)"'
+        tok=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.accessToken // empty')
+      else bad "credentials have no claudeAiOauth block (keys: $(printf '%s' "$creds" | jq -r 'keys|join(",")' 2>/dev/null)). Log in with a claude.ai account, not an API key."; fi
+    fi
+    echo "plugin run"
+    pstatus=""
+    if out=$("$LIB/$PLUGIN" --payload 2>&1); then
+      pstatus=$(printf '%s' "$out" | jq -r '.status // ""' 2>/dev/null)
+      if [[ -z "$pstatus" ]]; then ok "payload: $(printf '%s' "$out" | jq -c '{plan, windows: [.windows[] | "\(.label) \(.pct|floor)%"], fetched: (.fetched|todate)}' 2>/dev/null)"
+      else bad "payload status: $pstatus  ($(printf '%s' "$out" | jq -r '.hint' 2>/dev/null))"; fi
+    else bad "script failed: $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"; fi
+    echo "usage api"
+    if [[ -z "$tok" ]]; then bad "skipped (no token)"
+    elif [[ -z "$pstatus" ]]; then ok "reached through the plugin (not probed again: the endpoint has a small per-account quota)"
+    else
+      sleep 6; tmp=$(mktemp); code=$(curl -sS -m 15 -o "$tmp" -w '%{http_code}' -H "Authorization: Bearer $tok" -H "anthropic-beta: oauth-2025-04-20" "https://api.anthropic.com/api/oauth/usage" 2>"$tmp.err" || echo 000)
+      case "$code" in
+        200) ok "HTTP 200: $(jq -c '{five_hour: .five_hour.utilization, seven_day: .seven_day.utilization}' "$tmp" 2>/dev/null || echo 'unexpected JSON shape')" ;;
+        429) bad "HTTP 429 rate limited: the account made too many usage calls recently (another Mac with the panel open counts). It recovers by itself; wait a few minutes." ;;
+        000) bad "no answer from api.anthropic.com: $(head -c 200 "$tmp.err")" ;;
+        *)   bad "HTTP $code: $(head -c 240 "$tmp" | tr '\n' ' ')" ;;
+      esac; rm -f "$tmp" "$tmp.err"
+    fi
+    echo "activity"; ok "$("$LIB/bin/pulse-popover" --activity 2>&1 || echo 'helper failed')" ;;
   -h|--help|help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "pulse-limits: unknown command '$1' (try: pulse-limits help)" >&2; exit 64 ;;
 esac

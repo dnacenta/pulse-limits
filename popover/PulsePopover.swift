@@ -19,7 +19,7 @@
 // `pulse-popover --activity` prints one measurement as JSON and exits; the
 // plugin uses that for the initial value.
 //
-// It also keeps the numbers live: on show and every 60 s while shown it runs
+// It also keeps the numbers live: on show and every 2 min while shown it runs
 // `pulse-limits.5m.sh --payload` (a fresh fetch, JSON only) and hands the
 // result to window.pulse.usage({...}), so the page updates in place.
 // Build: ./build.sh
@@ -175,7 +175,7 @@ final class App: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         pushActivity()
         activityTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in self.pushActivity() }
         refreshUsage()
-        usageTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.refreshUsage() }
+        usageTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { _ in self.refreshUsage() }
         print("shown"); fflush(stdout)
     }
 

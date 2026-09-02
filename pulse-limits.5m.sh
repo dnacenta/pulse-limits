@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # <swiftbar.title>PulseLimits</swiftbar.title>
-# <swiftbar.version>v0.3.1</swiftbar.version>
+# <swiftbar.version>v0.3.2</swiftbar.version>
 # <swiftbar.author>Daniel Nacenta</swiftbar.author>
 # <swiftbar.desc>Your Claude plan limits as a retro patient monitor: the heart rate is your usage.</swiftbar.desc>
 # <swiftbar.dependencies>bash,jq,curl</swiftbar.dependencies>
@@ -40,7 +40,8 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pulse-limits"
 THEME_FILE="$CONFIG_DIR/theme"                     # chosen from the right-click menu; default crt
 THEME=$(cat "$THEME_FILE" 2>/dev/null || echo crt)
 MODE="${1:-}"          # --reset: drop the cache. --payload: fetch fresh, print JSON only. --theme <name>: persist a theme
-[[ "$MODE" == "--payload" ]] && MIN_INTERVAL=20   # the popover asks every 60 s while open
+[[ "$MODE" == "--payload" ]] && MIN_INTERVAL=45   # the popover asks every 2 min while open
+BACKOFF="$CACHE_DIR/backoff"                       # written after a 429: no calls until this epoch
 HISTORY_HOURS=12       # trend strip depth
 POPOVER_W=520
 POPOVER_H=316          # our own popover: 300 of screen + bezel. SwiftBar fallback adds its 32 px header
@@ -84,7 +85,7 @@ countdown() { # epoch -> "2H 14M" / "4D 07H" / "38M"
 }
 
 # --- force a live call on the next run (Option-click the header, or --reset) ----
-if [[ "$MODE" == "--reset" ]]; then rm -f "$CACHE"; exit 0; fi
+if [[ "$MODE" == "--reset" ]]; then rm -f "$CACHE" "$CACHE_DIR/backoff"; exit 0; fi
 # --- pick a theme (the right-click menu calls this, then SwiftBar refreshes us) -------
 if [[ "$MODE" == "--theme" ]]; then
   case " $THEMES " in *" ${2:-} "*) mkdir -p "$CONFIG_DIR"; printf '%s\n' "$2" > "$THEME_FILE"; exit 0 ;; esac
@@ -96,14 +97,18 @@ now=$(date +%s)
 status=""; hint=""       # status = short error name, hint = what to do about it
 
 # --- 1. credentials from the Keychain item Claude Code owns -----------------------
-token=""; plan="?"; tier="?"
-if creds=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null); then
+token=""; plan="?"; tier="?"; creds=""
+CREDS_FILE="$HOME/.claude/.credentials.json"          # Claude Code's fallback when the Keychain is unavailable
+if ! creds=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null); then
+  [[ -f "$CREDS_FILE" ]] && creds=$(cat "$CREDS_FILE")
+fi
+if [[ -n "$creds" ]]; then
   read -r token plan tier < <(
     jq -r '.claudeAiOauth | [ (.accessToken // ""), (.subscriptionType // "?"), (.rateLimitTier // "?") ] | @tsv' \
        <<<"$creds" 2>/dev/null)
 fi
 if [[ -z "$token" ]]; then
-  status="NO LOGIN"; hint="RUN claude IN A TERMINAL AND LOG IN"
+  status="NO LOGIN"; hint="RUN claude IN A TERMINAL AND LOG IN WITH A CLAUDE.AI ACCOUNT"
 fi
 plan_label=$(printf '%s' "$tier" | sed 's/^default_claude_//; s/_/ /g' | upper)
 [[ "$tier" == "?" ]] && plan_label=$(printf '%s' "$plan" | upper | sed 's/^?$//')
@@ -113,7 +118,8 @@ source="CACHE"
 cache_age=999999
 [[ -f "$CACHE" ]] && cache_age=$(( now - $(stat -f %m "$CACHE") ))
 
-if [[ -n "$token" ]] && (( cache_age > MIN_INTERVAL )); then
+backoff_until=$(cat "$BACKOFF" 2>/dev/null || echo 0)
+if [[ -n "$token" ]] && (( cache_age > MIN_INTERVAL )) && (( now >= backoff_until )); then
   tmp=$(mktemp "$CACHE_DIR/usage.XXXXXX")
   code=$(curl -sS -m 15 -o "$tmp" -w '%{http_code}' \
            -H "Authorization: Bearer $token" \
@@ -121,30 +127,28 @@ if [[ -n "$token" ]] && (( cache_age > MIN_INTERVAL )); then
            -H "User-Agent: pulse-limits/0.2" \
            "$USAGE_URL" 2>/dev/null) || code=000
   case "$code" in
-    200) if jq -e '.five_hour' "$tmp" >/dev/null 2>&1; then
+    200) if jq -e '(.five_hour != null) or ((.limits // []) | length > 0)' "$tmp" >/dev/null 2>&1; then
            mv -f "$tmp" "$CACHE"; source="LIVE"; cache_age=0
            # trend history: one row per live reading, pruned to HISTORY_HOURS
-           jq -r --arg now "$now" '[$now, ((.five_hour.utilization // 0) + 0.5 | floor), ((.seven_day.utilization // 0) + 0.5 | floor)] | @tsv' \
+           jq -r --arg now "$now" '
+             def lim(k): (first(.limits[]? | select(.kind == k)) // null);
+             def pct(k; legacy): (if lim(k) != null then (lim(k).percent // 0) elif legacy != null then (legacy.utilization // 0) else 0 end);
+             [$now, (pct("session"; .five_hour) + 0.5 | floor), (pct("weekly_all"; .seven_day) + 0.5 | floor)] | @tsv' \
               "$CACHE" >> "$HISTORY"
            awk -F'\t' -v cut="$(( now - HISTORY_HOURS * 3600 ))" '$1 >= cut' "$HISTORY" > "$HISTORY.tmp" && mv -f "$HISTORY.tmp" "$HISTORY"
          else status="BAD RESPONSE"; hint="THE USAGE ENDPOINT CHANGED SHAPE"; fi ;;
-    401|403) status="TOKEN EXPIRED"; hint="OPEN CLAUDE CODE ONCE, IT REFRESHES THE TOKEN" ;;
-    429)     status="RATE LIMITED";  hint="TOO MANY CALLS, BACKING OFF" ;;
+    401)     status="TOKEN EXPIRED"; hint="OPEN CLAUDE CODE ONCE, IT REFRESHES THE TOKEN" ;;
+    403)     status="NO PLAN ACCESS"; hint="LOG IN TO CLAUDE CODE WITH A CLAUDE.AI PLAN, NOT AN API KEY" ;;
+    404)     status="NO USAGE DATA";  hint="THIS ACCOUNT HAS NO PLAN LIMITS TO SHOW" ;;
+    429)     echo $(( now + 180 )) > "$BACKOFF"                 # the account quota is small and shared across Macs: pause 3 min
+             if (( cache_age > 300 )); then status="RATE LIMITED"; hint="TOO MANY USAGE CALLS FOR THIS ACCOUNT, RETRYING IN 3 MIN"; fi ;;
     000)     status="NETWORK";       hint="COULD NOT REACH API.ANTHROPIC.COM" ;;
     *)       status="HTTP $code";    hint="UNEXPECTED ANSWER FROM API.ANTHROPIC.COM" ;;
   esac
   rm -f "$tmp"
 fi
 
-# --- 3. numbers ---------------------------------------------------------------------
-s_pct=0; s_reset="-"; w_pct=0; w_reset="-"; have_data=0
-if [[ -f "$CACHE" ]]; then
-  have_data=1
-  read -r s_pct s_reset w_pct w_reset < <(
-    jq -r '[ ((.five_hour.utilization // 0) + 0.5 | floor), (.five_hour.resets_at // "-"),
-             ((.seven_day.utilization // 0) + 0.5 | floor), (.seven_day.resets_at // "-") ] | @tsv' "$CACHE")
-fi
-
+have_data=0; [[ -f "$CACHE" ]] && have_data=1
 
 # --- 4. payload for the monitor: JSON, base64, in the URL fragment ------------------
 hist_json="[]"
@@ -154,18 +158,32 @@ activity_json=null
 if (( have_data )); then
   payload=$(jq -c --arg plan "$plan_label" --arg source "$source" --arg status "$status" --arg hint "$hint" --arg theme "$THEME" \
                --argjson fetched "$(( now - cache_age ))" --argjson history "$hist_json" --argjson activity "$activity_json" '
-    { plan: $plan, source: $source, status: $status, hint: $hint, theme: $theme, fetched: $fetched, history: $history, activity: $activity,
-      windows: ([ { label: "SESSION", pct: (.five_hour.utilization // 0), resets: .five_hour.resets_at },
-                  { label: "WEEK",    pct: (.seven_day.utilization // 0), resets: .seven_day.resets_at } ]
-                + [ .limits[]? | select(.kind == "weekly_scoped")
-                    | { label: ((.scope.model.display_name // .scope.surface // "SCOPED") | ascii_upcase),
-                        pct: (.percent // 0), resets: .resets_at } ]),
-      credits: (.extra_usage | if (.is_enabled == true) and ((.used_credits // 0) > 0)
-                               then { used: .used_credits, currency: (.currency // "") } else null end) }' "$CACHE")
+    # Newer replies carry a limits[] array (kind: session / weekly_all / weekly_scoped); older
+    # ones the five_hour / seven_day blocks. Read whichever is there, limits[] first.
+    def lim(k): (first(.limits[]? | select(.kind == k)) // null);
+    def win(name; k; legacy):
+      (if lim(k) != null then { label: name, pct: (lim(k).percent // 0), resets: lim(k).resets_at }
+       elif legacy != null then { label: name, pct: (legacy.utilization // 0), resets: legacy.resets_at }
+       else empty end);
+    ([ win("SESSION"; "session"; .five_hour), win("WEEK"; "weekly_all"; .seven_day) ]
+     + [ .limits[]? | select(.kind == "weekly_scoped")
+         | { label: ((.scope.model.display_name // .scope.surface // "SCOPED") | ascii_upcase),
+             pct: (.percent // 0), resets: .resets_at } ]) as $w
+    | { plan: $plan, source: $source, theme: $theme, fetched: $fetched, history: $history, activity: $activity,
+        status: (if ($w | length) == 0 and $status == "" then "NO LIMITS IN REPLY" else $status end),
+        hint:   (if ($w | length) == 0 and $hint == "" then "THE USAGE REPLY HAD NO WINDOWS. RUN: pulse-limits doctor" else $hint end),
+        windows: $w,
+        credits: (.extra_usage | if (.is_enabled == true) and ((.used_credits // 0) > 0)
+                                 then { used: .used_credits, currency: (.currency // "") } else null end) }' "$CACHE")
 else
   payload=$(jq -cn --arg plan "$plan_label" --arg status "${status:-NO DATA}" --arg hint "$hint" --arg theme "$THEME" \
                '{ plan: $plan, source: "", status: $status, hint: $hint, theme: $theme, fetched: 0, history: [], windows: [], credits: null }')
 fi
+s_pct=0; s_reset="-"; w_pct=0; w_reset="-"
+read -r s_pct s_reset w_pct w_reset < <(printf '%s' "$payload" | jq -r '
+  def w(l): (first(.windows[] | select(.label == l)) // { pct: 0, resets: null });
+  [ (w("SESSION").pct + 0.5 | floor), (w("SESSION").resets // "-"), (w("WEEK").pct + 0.5 | floor), (w("WEEK").resets // "-") ] | @tsv')
+[[ $(printf '%s' "$payload" | jq '.windows | length') -gt 0 ]] || have_data=0
 b64=$(printf '%s' "$payload" | base64 | tr -d '\n')
 printf 'file://%s#%s' "$PANEL" "$b64" > "$URLFILE"
 if [[ "$MODE" == "--payload" ]]; then printf '%s\n' "$payload"; exit 0; fi
@@ -214,10 +232,7 @@ if (( have_data )); then
     local e; e=$(epoch_of "$3"); local when="?"; [[ -n "$e" ]] && when=$(countdown "$e")
     line "$(printf '%-8s %s %3d%%   RESETS IN %s' "$1" "$(bar "$2" 20)" "$2" "$when")" "$MONO color=$(tone "$2")"
   }
-  row SESSION "$s_pct" "$s_reset"
-  row WEEK    "$w_pct" "$w_reset"
   while IFS=$'\t' read -r name pct iso; do
-    [[ -n "${name:-}" ]] && row "$(printf '%.8s' "$(printf '%s' "$name" | upper)")" "$pct" "$iso"
-  done < <(jq -r '.limits[]? | select(.kind == "weekly_scoped")
-                  | [ (.scope.model.display_name // .scope.surface // "SCOPED"), (.percent // 0), (.resets_at // "-") ] | @tsv' "$CACHE" 2>/dev/null)
+    [[ -n "${name:-}" ]] && row "$(printf '%.8s' "$name")" "$pct" "$iso"
+  done < <(printf '%s' "$payload" | jq -r '.windows[] | [ .label, (.pct + 0.5 | floor), (.resets // "-") ] | @tsv')
 fi

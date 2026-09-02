@@ -1,8 +1,8 @@
 class PulseLimits < Formula
   desc "Claude plan limits in the menu bar, as a retro patient monitor (SwiftBar)"
   homepage "https://github.com/dnacenta/pulse-limits"
-  url "https://github.com/dnacenta/pulse-limits/archive/refs/tags/v0.3.1.tar.gz"
-  sha256 "991e616a0b1ccb864fe3da9c013e21b766f3e6674538c7380452e2197441827b"
+  url "https://github.com/dnacenta/pulse-limits/archive/refs/tags/v0.3.2.tar.gz"
+  sha256 "SHA256_OF_THE_TAG_TARBALL"
   license "AGPL-3.0-or-later"
 
   depends_on "jq"

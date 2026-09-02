@@ -37,8 +37,8 @@ Green, amber from 60 %, red from 85 %.
 - **The other windows** as rings: the week, plus any per-model weekly cap your
   plan carries.
 - **A 12-hour trend** of the session window, so you can see when you burned it.
-- **Live while open.** The panel refreshes every minute as long as it is on
-  screen and says `● LIVE` when the reading is under two minutes old.
+- **Live while open.** The panel refreshes every two minutes as long as it is
+  on screen and says `● LIVE` when the reading is under two minutes old.
 - **Honest when it cannot know.** Stale data turns amber and says how old it is.
   No data is a flat line with `NO SIGNAL`.
 
@@ -99,6 +99,7 @@ pulse-limits theme NAME    crt | modern | cyber | term | synth | analog
 pulse-limits refresh       force a live fetch now
 pulse-limits open          show or hide the monitor
 pulse-limits status        print the current reading as JSON
+pulse-limits doctor        check every link of the chain
 ```
 
 ## How it works
@@ -122,7 +123,7 @@ Everything is a Bash script, one HTML file, and two tiny Swift programs.
 5. **The popover.** `bin/pulse-popover` is a borderless, non-activating panel
    with one WKWebView, shown under the mouse. It stays resident for ten idle
    minutes so the next click is instant, pushes fresh activity every two
-   seconds and fresh usage every minute while visible, and exits on its own.
+   seconds and fresh usage every two minutes while visible, and exits on its own.
    SwiftBar's built-in webview popover would work too but paints a title bar
    that cannot be turned off; the script falls back to it if the helper is
    missing.
@@ -146,6 +147,33 @@ Claude Code out.
 - Transcripts are read locally for token counts and timestamps only; their
   content is never parsed beyond the `usage` field.
 - Cache and settings live in `~/.cache/pulse-limits` and `~/.config/pulse-limits`.
+
+## Troubleshooting
+
+`NO SIGNAL` means the plugin has no reading at all, and the header top-right
+says why: `? NO LOGIN`, `? TOKEN EXPIRED`, `? NO PLAN ACCESS`, `? RATE
+LIMITED`, `? NETWORK`. Run the doctor and read it top to bottom; it checks
+every link of the chain without printing your token:
+
+```sh
+pulse-limits doctor
+```
+
+Common causes:
+
+- **No Claude Code login on this Mac.** Run `claude` once and log in with a
+  claude.ai account. An API-key login gives a token the usage endpoint
+  refuses (`NO PLAN ACCESS`).
+- **Token expired.** Claude Code refreshes it while it runs; open it once.
+- **Rate limited.** The usage endpoint has a small per-account quota, shared
+  by every Mac on the account. The plugin backs off for three minutes after
+  a 429 and keeps the last good reading; a fresh install with no reading yet
+  shows `NO SIGNAL` until the quota frees up.
+- **SwiftBar asked for Keychain access** and the prompt was dismissed. Run
+  `security find-generic-password -s "Claude Code-credentials" -w >/dev/null`
+  in a terminal and click *Always Allow*.
+- **`readlink -f` unsupported** on macOS before 12.3: the plugin cannot find
+  its files through the symlink. Copy the folder instead of linking.
 
 ## Tuning
 
