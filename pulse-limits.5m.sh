@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # <swiftbar.title>PulseLimits</swiftbar.title>
-# <swiftbar.version>v0.3.5</swiftbar.version>
+# <swiftbar.version>v0.3.6</swiftbar.version>
 # <swiftbar.author>Daniel Nacenta</swiftbar.author>
 # <swiftbar.desc>Your Claude plan limits as a retro patient monitor: the heart rate is your usage.</swiftbar.desc>
 # <swiftbar.dependencies>bash,jq,curl</swiftbar.dependencies>
@@ -146,6 +146,8 @@ if [[ -n "$token" ]] && (( cache_age > MIN_INTERVAL )) && (( now >= backoff_unti
            -H "anthropic-beta: oauth-2025-04-20" \
            -H "User-Agent: pulse-limits/0.2" \
            "$USAGE_URL" 2>/dev/null) || code=000
+  # keep whatever came back so `pulse-limits raw` can show a failure, not just a success
+  { printf '{"http": %s, "at": %s, "body": ' "${code:-0}" "$now"; jq -c . "$tmp" 2>/dev/null || jq -Rs . "$tmp" 2>/dev/null || printf '""'; printf '}\n'; } > "$CACHE_DIR/last-reply.json" 2>/dev/null
   case "$code" in
     200) if jq -e '(.five_hour != null) or ((.limits // []) | length > 0)' "$tmp" >/dev/null 2>&1; then
            mv -f "$tmp" "$CACHE"; source="LIVE"; cache_age=0

@@ -112,6 +112,7 @@ case "${1:-help}" in
       esac; rm -f "$tmp" "$tmp.err"
     fi
     echo "last raw reply (shape digest)"
+    [[ -f "$CACHE_DIR/last-reply.json" ]] && ok "last attempt: $(jq -c '{http, at: (.at|todate), body: (.body | if type == "object" then {keys: (keys|join(",")), error: .error} else (tostring | .[0:200]) end)}' "$CACHE_DIR/last-reply.json" 2>/dev/null)"
     if [[ -f "$CACHE_DIR/usage.json" ]]; then
       ok "$(jq -c '{keys: (keys | join(",")), five_hour: .five_hour.utilization, seven_day: .seven_day.utilization,
                     limits: [.limits[]? | {kind, percent, model: .scope.model.display_name}]}' "$CACHE_DIR/usage.json" 2>/dev/null || echo 'not JSON')"
@@ -120,7 +121,8 @@ case "${1:-help}" in
   keychain) [[ -n "${2:-}" ]] || { echo "usage: pulse-limits keychain 'Claude Code-credentials-…'" >&2; exit 64; }
            mkdir -p "$CONFIG_DIR"; printf '%s\n' "$2" > "$CONFIG_DIR/keychain"; "$LIB/$PLUGIN" --reset; refresh; echo "pinned: $2" ;;
   raw)     if [[ -f "$CACHE_DIR/usage.json" ]]; then jq . "$CACHE_DIR/usage.json"
-           else echo "no reply cached yet: the plugin has never had a successful answer. Run: pulse-limits doctor" >&2; exit 1; fi ;;
+           elif [[ -f "$CACHE_DIR/last-reply.json" ]]; then echo "no successful reply yet; the last attempt was:" >&2; jq . "$CACHE_DIR/last-reply.json"
+           else echo "no reply of any kind yet: the plugin has not called the API. Run: pulse-limits doctor" >&2; exit 1; fi ;;
   version) sed -n 's/^# <swiftbar.version>\(.*\)<\/swiftbar.version>$/\1/p' "$LIB/$PLUGIN" ;;
   update)
     before=$("$0" version)
