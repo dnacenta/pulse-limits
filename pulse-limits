@@ -11,6 +11,7 @@
 #   pulse-limits version       print the installed version
 #   pulse-limits doctor        check every step of the chain (paste this when asking for help)
 #   pulse-limits raw           print the last raw usage reply from the API (no secrets in it)
+#   pulse-limits keychain NAME pin the Keychain entry that holds the claude.ai login (see doctor)
 #
 # Works from a git checkout (this file next to pulse-limits.5m.sh) and from a
 # Homebrew install (bin/pulse-limits with the plugin under opt/pulse-limits/libexec,
@@ -67,17 +68,29 @@ case "${1:-help}" in
     link="$(plugin_dir)/$PLUGIN"
     if [[ -L "$link" ]]; then [[ -e "$link" ]] && ok "plugin linked: $link -> $(readlink "$link")" || bad "plugin link is dangling: $link"; else bad "plugin not linked in $(plugin_dir) (run: pulse-limits install)"; fi
     echo "credentials"
-    creds=""; src=""
-    if creds=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null); then src="Keychain item 'Claude Code-credentials'"
-    elif [[ -f "$HOME/.claude/.credentials.json" ]]; then creds=$(cat "$HOME/.claude/.credentials.json"); src="file ~/.claude/.credentials.json"
-    else bad "no Claude Code login found (no Keychain item, no ~/.claude/.credentials.json). Run 'claude' and log in with a claude.ai account."; fi
-    tok=""
-    if [[ -n "$creds" ]]; then
-      ok "source: $src"
-      if printf '%s' "$creds" | jq -e '.claudeAiOauth' >/dev/null 2>&1; then
-        printf '%s' "$creds" | jq -r '.claudeAiOauth | "  ok       token: \(if (.accessToken // "") != "" then "present, \(.accessToken|length) chars" else "MISSING" end)\n  ok       plan: \(.subscriptionType // "?")   tier: \(.rateLimitTier // "?")\n  ok       expires: \(if .expiresAt then (.expiresAt/1000|todate) else "?" end)"'
-        tok=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.accessToken // empty')
-      else bad "credentials have no claudeAiOauth block (keys: $(printf '%s' "$creds" | jq -r 'keys|join(",")' 2>/dev/null)). Log in with a claude.ai account, not an API key."; fi
+    [[ -n "${CLAUDE_CONFIG_DIR:-}" ]] && ok "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR in this shell (SwiftBar does not see shell variables)"
+    pin=$(cat "$CONFIG_DIR/keychain" 2>/dev/null || true); [[ -n "$pin" ]] && ok "pinned Keychain service: $pin"
+    tok=""; seen=" "
+    while IFS= read -r svc; do
+      [[ -n "$svc" && "$seen" != *" $svc "* ]] || continue; seen="$seen$svc "
+      if json=$(security find-generic-password -s "$svc" -w 2>/dev/null); then
+        if printf '%s' "$json" | jq -e '(.claudeAiOauth.accessToken // "") != ""' >/dev/null 2>&1; then
+          ok "Keychain '$svc': claude.ai login, $(printf '%s' "$json" | jq -r '.claudeAiOauth | "plan \(.subscriptionType // "?"), tier \(.rateLimitTier // "?"), expires \(if .expiresAt then (.expiresAt/1000|todate) else "?" end)"')"
+          [[ -n "$tok" ]] || tok=$(printf '%s' "$json" | jq -r '.claudeAiOauth.accessToken')
+        else bad "Keychain '$svc': no claude.ai login in it (keys: $(printf '%s' "$json" | jq -r 'keys|join(",")' 2>/dev/null))"; fi
+      else bad "Keychain '$svc': listed but not readable from here"; fi
+    done < <({ [[ -n "$pin" ]] && echo "$pin"; echo "Claude Code-credentials"; security dump-keychain 2>/dev/null | sed -n 's/^ *"svce"<blob>="\(Claude Code-credentials[^"]*\)".*/\1/p'; } | awk '!x[$0]++')
+    for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json" "$HOME/.claude/.credentials.json"; do
+      [[ -f "$f" ]] || continue
+      if jq -e '(.claudeAiOauth.accessToken // "") != ""' "$f" >/dev/null 2>&1; then ok "file $f: claude.ai login"; [[ -n "$tok" ]] || tok=$(jq -r '.claudeAiOauth.accessToken' "$f")
+      else bad "file $f: no claude.ai login in it"; fi
+    done
+    if [[ -z "$tok" ]]; then
+      bad "no claude.ai login found anywhere on this Mac."
+      echo "           In Claude Code run /status: it names the login method and, if set, the config dir."
+      echo "           If Claude Code uses CLAUDE_CONFIG_DIR, its Keychain entry has a different name; list them with:"
+      echo "             security dump-keychain | grep -o '\"Claude Code-credentials[^\"]*\"' | sort -u"
+      echo "           and pin the right one:  echo 'Claude Code-credentials-…' > ~/.config/pulse-limits/keychain"
     fi
     echo "plugin run"
     pstatus=""
@@ -104,6 +117,8 @@ case "${1:-help}" in
                     limits: [.limits[]? | {kind, percent, model: .scope.model.display_name}]}' "$CACHE_DIR/usage.json" 2>/dev/null || echo 'not JSON')"
     else bad "no reply cached yet"; fi
     echo "activity"; ok "$("$LIB/bin/pulse-popover" --activity 2>&1 || echo 'helper failed')" ;;
+  keychain) [[ -n "${2:-}" ]] || { echo "usage: pulse-limits keychain 'Claude Code-credentials-…'" >&2; exit 64; }
+           mkdir -p "$CONFIG_DIR"; printf '%s\n' "$2" > "$CONFIG_DIR/keychain"; "$LIB/$PLUGIN" --reset; refresh; echo "pinned: $2" ;;
   raw)     if [[ -f "$CACHE_DIR/usage.json" ]]; then jq . "$CACHE_DIR/usage.json"
            else echo "no reply cached yet: the plugin has never had a successful answer. Run: pulse-limits doctor" >&2; exit 1; fi ;;
   version) sed -n 's/^# <swiftbar.version>\(.*\)<\/swiftbar.version>$/\1/p' "$LIB/$PLUGIN" ;;

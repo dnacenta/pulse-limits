@@ -105,6 +105,7 @@ pulse-limits open          show or hide the monitor
 pulse-limits status        print the current reading as JSON
 pulse-limits doctor        check every link of the chain
 pulse-limits update        update to the latest release
+pulse-limits keychain NAME pin the Keychain entry holding the login
 ```
 
 ## How it works
@@ -169,6 +170,11 @@ Common causes:
 - **No Claude Code login on this Mac.** Run `claude` once and log in with a
   claude.ai account. An API-key login gives a token the usage endpoint
   refuses (`NO PLAN ACCESS`).
+- **The login is in a differently named Keychain entry.** Claude Code keys
+  its entry to `CLAUDE_CONFIG_DIR`, so a Mac with a work config dir can have
+  several `Claude Code-credentials…` entries. The plugin scans them and takes
+  the one with a claude.ai login; the doctor lists them all. To force one:
+  `pulse-limits keychain 'Claude Code-credentials-…'`.
 - **Token expired.** Claude Code refreshes it while it runs; open it once.
 - **Rate limited.** The usage endpoint has a small per-account quota, shared
   by every Mac on the account. The plugin backs off for three minutes after

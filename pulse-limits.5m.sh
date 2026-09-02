@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # <swiftbar.title>PulseLimits</swiftbar.title>
-# <swiftbar.version>v0.3.4</swiftbar.version>
+# <swiftbar.version>v0.3.5</swiftbar.version>
 # <swiftbar.author>Daniel Nacenta</swiftbar.author>
 # <swiftbar.desc>Your Claude plan limits as a retro patient monitor: the heart rate is your usage.</swiftbar.desc>
 # <swiftbar.dependencies>bash,jq,curl</swiftbar.dependencies>
@@ -96,19 +96,39 @@ mkdir -p "$CACHE_DIR"
 now=$(date +%s)
 status=""; hint=""       # status = short error name, hint = what to do about it
 
-# --- 1. credentials from the Keychain item Claude Code owns -----------------------
-token=""; plan="?"; tier="?"; creds=""
-CREDS_FILE="$HOME/.claude/.credentials.json"          # Claude Code's fallback when the Keychain is unavailable
-if ! creds=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null); then
-  [[ -f "$CREDS_FILE" ]] && creds=$(cat "$CREDS_FILE")
-fi
-if [[ -n "$creds" ]]; then
-  read -r token plan tier < <(
-    jq -r '.claudeAiOauth | [ (.accessToken // ""), (.subscriptionType // "?"), (.rateLimitTier // "?") ] | @tsv' \
-       <<<"$creds" 2>/dev/null)
+# --- 1. credentials: the claude.ai login Claude Code keeps in the Keychain ------------
+# Claude Code keys the Keychain entry to CLAUDE_CONFIG_DIR, so a Mac can hold several
+# "Claude Code-credentials…" entries and only some carry a claude.ai login. SwiftBar does
+# not see shell variables, so we scan for them. A pinned service name wins.
+CRED_PIN="$CONFIG_DIR/keychain"
+CREDS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"   # Claude Code's file fallback
+has_login() { printf '%s' "$1" | jq -e '(.claudeAiOauth.accessToken // "") != ""' >/dev/null 2>&1; }
+keychain_services() {          # every "Claude Code-credentials…" service name, pinned first, default second
+  cat "$CRED_PIN" 2>/dev/null; echo "$KEYCHAIN_SERVICE"
+  security dump-keychain 2>/dev/null | sed -n 's/^ *"svce"<blob>="\(Claude Code-credentials[^"]*\)".*/\1/p'
+}
+find_creds() {
+  local svc json seen=" "
+  while IFS= read -r svc; do
+    [[ -n "$svc" && "$seen" != *" $svc "* ]] || continue; seen="$seen$svc "
+    json=$(security find-generic-password -s "$svc" -w 2>/dev/null) || continue
+    has_login "$json" && { printf '%s' "$json"; return 0; }
+  done < <(keychain_services)
+  local f
+  for f in "$CREDS_FILE" "$HOME/.claude/.credentials.json"; do
+    [[ -f "$f" ]] || continue
+    json=$(cat "$f"); has_login "$json" && { printf '%s' "$json"; return 0; }
+  done
+  return 1
+}
+token=""; plan="?"; tier="?"
+if creds=$(find_creds); then
+  token=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.accessToken // empty')
+  plan=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.subscriptionType // "?"')
+  tier=$(printf '%s' "$creds" | jq -r '.claudeAiOauth.rateLimitTier // "?"')
 fi
 if [[ -z "$token" ]]; then
-  status="NO LOGIN"; hint="RUN claude IN A TERMINAL AND LOG IN WITH A CLAUDE.AI ACCOUNT"
+  status="NO LOGIN"; hint="NO CLAUDE.AI LOGIN FOUND. RUN: pulse-limits doctor"
 fi
 plan_label=$(printf '%s' "$tier" | sed 's/^default_claude_//; s/_/ /g' | upper)
 [[ "$tier" == "?" ]] && plan_label=$(printf '%s' "$plan" | upper | sed 's/^?$//')
