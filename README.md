@@ -91,7 +91,8 @@ cd pulse-limits && ./build.sh && ./pulse-limits install
 ```
 
 `./build.sh` compiles the two small Swift helpers (about ten seconds). Every path
-is safe to re-run and updates in place. Remove with `pulse-limits uninstall`.
+is safe to re-run. Update with `pulse-limits update`, remove with
+`pulse-limits uninstall`.
 
 ## The `pulse-limits` command
 
@@ -103,6 +104,7 @@ pulse-limits refresh       force a live fetch now
 pulse-limits open          show or hide the monitor
 pulse-limits status        print the current reading as JSON
 pulse-limits doctor        check every link of the chain
+pulse-limits update        update to the latest release
 ```
 
 ## How it works

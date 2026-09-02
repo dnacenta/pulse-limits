@@ -7,6 +7,8 @@
 #   pulse-limits refresh       force a live fetch now
 #   pulse-limits open          show or hide the monitor
 #   pulse-limits status        print the current reading as JSON
+#   pulse-limits update        update to the latest release (Homebrew or git, whichever installed it)
+#   pulse-limits version       print the installed version
 #   pulse-limits doctor        check every step of the chain (paste this when asking for help)
 #   pulse-limits raw           print the last raw usage reply from the API (no secrets in it)
 #
@@ -103,6 +105,26 @@ case "${1:-help}" in
     else bad "no reply cached yet"; fi
     echo "activity"; ok "$("$LIB/bin/pulse-popover" --activity 2>&1 || echo 'helper failed')" ;;
   raw)     jq . "$CACHE_DIR/usage.json" ;;
+  version) sed -n 's/^# <swiftbar.version>\(.*\)<\/swiftbar.version>$/\1/p' "$LIB/$PLUGIN" ;;
+  update)
+    before=$("$0" version)
+    if [[ "$LIB" == */Cellar/pulse-limits/* || "$LIB" == */opt/pulse-limits/* ]]; then
+      echo "installed with Homebrew: upgrading"
+      brew upgrade dnacenta/tap/pulse-limits || { echo "brew upgrade failed" >&2; exit 1; }
+    elif [[ -d "$LIB/.git" ]]; then
+      echo "git checkout at $LIB: pulling"
+      git -C "$LIB" pull --ff-only || { echo "git pull failed (local changes?)" >&2; exit 1; }
+      (cd "$LIB" && ./build.sh)
+    else
+      echo "installed by copying the folder: re-run the installer" >&2
+      echo "  curl -fsSL https://raw.githubusercontent.com/dnacenta/pulse-limits/main/install.sh | bash" >&2
+      exit 1
+    fi
+    pkill -f bin/pulse-popover 2>/dev/null || true
+    rm -f "$CACHE_DIR/popover.pid" "$CACHE_DIR/popover.closed"
+    refresh
+    after=$("$0" version)
+    if [[ "$before" == "$after" ]]; then echo "already up to date: $after"; else echo "updated: $before -> $after"; fi ;;
   -h|--help|help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "pulse-limits: unknown command '$1' (try: pulse-limits help)" >&2; exit 64 ;;
 esac
