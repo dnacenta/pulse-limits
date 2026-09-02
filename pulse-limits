@@ -70,16 +70,25 @@ case "${1:-help}" in
     echo "credentials"
     [[ -n "${CLAUDE_CONFIG_DIR:-}" ]] && ok "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR in this shell (SwiftBar does not see shell variables)"
     pin=$(cat "$CONFIG_DIR/keychain" 2>/dev/null || true); [[ -n "$pin" ]] && ok "pinned Keychain service: $pin"
-    tok=""; seen=" "
-    while IFS= read -r svc; do
-      [[ -n "$svc" && "$seen" != *" $svc "* ]] || continue; seen="$seen$svc "
-      if json=$(security find-generic-password -s "$svc" -w 2>/dev/null); then
+    tok=""; seen=" "; nitems=0
+    while IFS=$'\t' read -r svc acct mdat; do
+      [[ -n "$svc" && "$seen" != *"|$svc/$acct|"* ]] || continue; seen="$seen|$svc/$acct| "; nitems=$((nitems + 1))
+      if [[ -n "$acct" ]]; then json=$(security find-generic-password -s "$svc" -a "$acct" -w 2>/dev/null); else json=$(security find-generic-password -s "$svc" -w 2>/dev/null); fi
+      if [[ -n "$json" ]]; then
         if printf '%s' "$json" | jq -e '(.claudeAiOauth.accessToken // "") != ""' >/dev/null 2>&1; then
-          ok "Keychain '$svc': claude.ai login, $(printf '%s' "$json" | jq -r '.claudeAiOauth | "plan \(.subscriptionType // "?"), tier \(.rateLimitTier // "?"), expires \(if .expiresAt then (.expiresAt/1000|todate) else "?" end)"')"
+          ok "Keychain '$svc' / account '$acct'${mdat:+ (modified $mdat)}: claude.ai login, $(printf '%s' "$json" | jq -r '.claudeAiOauth | "plan \(.subscriptionType // "?"), tier \(.rateLimitTier // "?"), expires \(if .expiresAt then (.expiresAt/1000|todate) else "?" end)"')"
           [[ -n "$tok" ]] || tok=$(printf '%s' "$json" | jq -r '.claudeAiOauth.accessToken')
-        else bad "Keychain '$svc': no claude.ai login in it (keys: $(printf '%s' "$json" | jq -r 'keys|join(",")' 2>/dev/null))"; fi
-      else bad "Keychain '$svc': listed but not readable from here"; fi
-    done < <({ [[ -n "$pin" ]] && echo "$pin"; echo "Claude Code-credentials"; security dump-keychain 2>/dev/null | sed -n 's/^ *"svce"<blob>="\(Claude Code-credentials[^"]*\)".*/\1/p'; } | awk '!x[$0]++')
+        else bad "Keychain '$svc' / account '$acct'${mdat:+ (modified $mdat)}: no claude.ai login in it (keys: $(printf '%s' "$json" | jq -r 'if type == "object" then keys | join(",") else "not JSON, \(length) chars" end' 2>/dev/null))"; fi
+      else bad "Keychain '$svc' / account '$acct': listed but not readable from here"; fi
+    done < <({ [[ -n "$pin" ]] && printf '%s\t\t\n' "$pin"
+               items=$(security dump-keychain 2>/dev/null | awk -F'"' '
+                 /^keychain:/ { svc = ""; acct = ""; labl = ""; mdat = "" }
+                 /"acct"<blob>=/ { acct = $4 }
+                 /"labl"<blob>=/ { labl = $4 }
+                 /"mdat"<timedate>=/ { mdat = substr($4, 1, 15) }
+                 /"svce"<blob>=/ { svc = $4; if (tolower(svc) ~ /claude/ || tolower(labl) ~ /claude/) print svc "\t" acct "\t" mdat }')
+               if [[ -n "$items" ]]; then printf '%s\n' "$items"; else printf 'Claude Code-credentials\t\t\n'; fi; })
+    ok "$nitems Keychain item(s) mention Claude"
     for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json" "$HOME/.claude/.credentials.json"; do
       [[ -f "$f" ]] || continue
       if jq -e '(.claudeAiOauth.accessToken // "") != ""' "$f" >/dev/null 2>&1; then ok "file $f: claude.ai login"; [[ -n "$tok" ]] || tok=$(jq -r '.claudeAiOauth.accessToken' "$f")

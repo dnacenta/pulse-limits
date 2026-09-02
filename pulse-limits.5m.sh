@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # <swiftbar.title>PulseLimits</swiftbar.title>
-# <swiftbar.version>v0.3.6</swiftbar.version>
+# <swiftbar.version>v0.3.7</swiftbar.version>
 # <swiftbar.author>Daniel Nacenta</swiftbar.author>
 # <swiftbar.desc>Your Claude plan limits as a retro patient monitor: the heart rate is your usage.</swiftbar.desc>
 # <swiftbar.dependencies>bash,jq,curl</swiftbar.dependencies>
@@ -103,17 +103,26 @@ status=""; hint=""       # status = short error name, hint = what to do about it
 CRED_PIN="$CONFIG_DIR/keychain"
 CREDS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"   # Claude Code's file fallback
 has_login() { printf '%s' "$1" | jq -e '(.claudeAiOauth.accessToken // "") != ""' >/dev/null 2>&1; }
-keychain_services() {          # every "Claude Code-credentials…" service name, pinned first, default second
-  cat "$CRED_PIN" 2>/dev/null; echo "$KEYCHAIN_SERVICE"
-  security dump-keychain 2>/dev/null | sed -n 's/^ *"svce"<blob>="\(Claude Code-credentials[^"]*\)".*/\1/p'
+keychain_items() {   # "service<TAB>account" for every item whose service or label mentions Claude; pinned first
+  local pin; pin=$(cat "$CRED_PIN" 2>/dev/null || true); [[ -n "$pin" ]] && printf '%s\t\n' "$pin"
+  printf '%s\t\n' "$KEYCHAIN_SERVICE"
+  security dump-keychain 2>/dev/null | awk -F'"' '
+    /^keychain:/ { svc = ""; acct = ""; labl = "" }
+    /"acct"<blob>=/ { acct = $4 }
+    /"labl"<blob>=/ { labl = $4 }
+    /"svce"<blob>=/ { svc = $4; if (tolower(svc) ~ /claude/ || tolower(labl) ~ /claude/) print svc "\t" acct }'
+}
+read_item() {        # service account -> the item's secret (account may be empty: first match)
+  if [[ -n "${2:-}" ]]; then security find-generic-password -s "$1" -a "$2" -w 2>/dev/null
+  else security find-generic-password -s "$1" -w 2>/dev/null; fi
 }
 find_creds() {
-  local svc json seen=" "
-  while IFS= read -r svc; do
-    [[ -n "$svc" && "$seen" != *" $svc "* ]] || continue; seen="$seen$svc "
-    json=$(security find-generic-password -s "$svc" -w 2>/dev/null) || continue
+  local svc acct json seen=" "
+  while IFS=$'\t' read -r svc acct; do
+    [[ -n "$svc" && "$seen" != *"|$svc/$acct|"* ]] || continue; seen="$seen|$svc/$acct| "
+    json=$(read_item "$svc" "$acct") || continue
     has_login "$json" && { printf '%s' "$json"; return 0; }
-  done < <(keychain_services)
+  done < <(keychain_items)
   local f
   for f in "$CREDS_FILE" "$HOME/.claude/.credentials.json"; do
     [[ -f "$f" ]] || continue
