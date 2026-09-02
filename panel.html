@@ -487,19 +487,26 @@
     const lab = activityLabel();
     if (lab !== null) txt(lab, 16, 54, '600 11px ' + F, busy() ? P.cyan : P.lav, 'left', 1.5);
 
-    const big = alive ? sessionPct + '%' : '--', bf = 'italic 900 56px ' + F;
-    const cg = ctx.createLinearGradient(0, 196, 0, 250); cg.addColorStop(0, '#ffffff'); cg.addColorStop(.5, P.cyan); cg.addColorStop(.52, P.pink); cg.addColorStop(1, '#ff8ac8');
-    ctx.shadowColor = P.pink; ctx.shadowBlur = 18; txt(big, 16, 246, bf, cg); ctx.shadowBlur = 0;
-    txt(alive ? 'SESSION · ' + resetText(session) : 'NO SIGNAL', 18, 266, '600 11px ' + F, alive ? P.white : '#ff4d4d', 'left', 2);
-    others.slice(0, 3).forEach((wd, i) => {
-      const cx = W - 200 + i * 78, cy = 232, pct = Math.round(wd.pct);
-      ctx.fillStyle = 'rgba(11,4,22,.7)'; ctx.beginPath(); ctx.arc(cx, cy, 30, 0, Math.PI * 2); ctx.fill();
-      ring(cx, cy, 24, pct, { track: '#2a0d3d', color: i % 2 ? P.cyan : P.pink, width: 4, cap: 'round', glow: 8 });
-      txt(pct + '%', cx, cy + 5, '700 13px ' + F, P.white, 'center');
-      txt(wd.label, cx, cy - 36, '600 9px ' + F, P.lav, 'center', 2);
-      txt(span(resetMs(wd)), cx, cy + 44, '600 9px ' + F, P.lav, 'center', 1);
-    });
-    txt(alive ? 'UPDATED ' + short(ageSec()) + ' AGO · NEXT RESET ' + nextReset() : (D.hint || ''), 16, H - 8, '500 9px ' + F, 'rgba(255,255,255,.55)', 'left', 1);
+    // readouts sit on dark glass panels so the grid never runs through the numbers
+    const panel = (x, y, w, h) => { ctx.fillStyle = 'rgba(8,2,20,.82)'; rr(x, y, w, h, 10); ctx.fill(); ctx.strokeStyle = 'rgba(34,230,255,.35)'; ctx.lineWidth = 1; ctx.stroke(); };
+    panel(12, 192, 270, 96);
+    const big = alive ? sessionPct + '%' : '--', bf = 'italic 900 52px ' + F;
+    const cg = ctx.createLinearGradient(0, 200, 0, 246); cg.addColorStop(0, '#ffffff'); cg.addColorStop(.55, '#ffffff'); cg.addColorStop(.56, '#ff9ad4'); cg.addColorStop(1, P.pink);
+    ctx.shadowColor = P.pink; ctx.shadowBlur = 14; txt(big, 24, 250, bf, cg); ctx.shadowBlur = 0;
+    txt(alive ? 'SESSION · ' + resetText(session) : 'NO SIGNAL', 26, 270, '600 11px ' + F, alive ? P.white : '#ff4d4d', 'left', 2);
+    if (!alive && D.hint) txt(D.hint, 26, 280, '500 9px ' + F, P.lav, 'left', 1);
+    const shown = others.slice(0, 3);
+    if (shown.length) {
+      const pw = shown.length * 78 + 16, px0 = W - 12 - pw;
+      panel(px0, 192, pw, 96);
+      shown.forEach((wd, i) => {
+        const cx = px0 + 8 + 39 + i * 78, cy = 242, pct = Math.round(wd.pct);
+        ring(cx, cy, 23, pct, { track: '#2a0d3d', color: i % 2 ? P.cyan : P.pink, width: 4, cap: 'round', glow: 8 });
+        txt(pct + '%', cx, cy + 5, '700 13px ' + F, P.white, 'center');
+        txt(wd.label, cx, cy - 32, '600 9px ' + F, P.lav, 'center', 2);
+        txt(span(resetMs(wd)), cx, cy + 40, '600 9px ' + F, P.lav, 'center', 1);
+      });
+    }
   }};
 
   // ---- 6. ANALOG: VU meters and a chart recorder ---------------------------------------------

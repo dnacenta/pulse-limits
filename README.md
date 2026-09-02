@@ -1,158 +1,170 @@
-# PulseLimits
+<p align="center">
+  <img src="docs/crt.png" width="660" alt="PulseLimits, CRT theme: a phosphor-green patient monitor showing a heartbeat, the session percentage, week and model rings, and a 12-hour trend">
+</p>
 
-Your Claude plan limits in the macOS menu bar, as a retro patient monitor.
-The ECG's heart rate is your session usage: an idle account beats at ~50 BPM,
-a maxed-out one races at ~180. One Bash script and one HTML file, driven by
-SwiftBar. No app of its own, no account, no server.
+<h1 align="center">PulseLimits</h1>
 
-    63% ◔                <- menu bar: the 5-hour window, battery-style
+<p align="center">
+  Your Claude plan limits in the macOS menu bar, as a retro patient monitor.<br>
+  The heartbeat is live: it races while Claude Code is streaming and slows when it idles.
+</p>
 
-Left-click opens the monitor in a borderless popover. Right-click opens a
-plain text fallback menu.
+<p align="center">
+  <img src="docs/menubar.png" width="140" alt="Menu bar item: 16% and a ring">
+</p>
+
+```sh
+brew install dnacenta/tap/pulse-limits && pulse-limits install
+```
+
+A [SwiftBar](https://github.com/swiftbar/SwiftBar) plugin. No account, no server, no
+tracking. It reuses the login Claude Code already keeps in your Keychain, and the
+only thing that ever leaves your Mac is the one request Claude Code itself makes
+when you type `/usage`.
+
+## What you get
+
+**In the menu bar**: the 5-hour window as a number and a ring, battery-style.
+Green, amber from 60 %, red from 85 %.
+
+**On click**, a monitor:
+
+- **A heartbeat that means something.** Its rate follows what Claude Code is doing
+  right now, measured from the transcripts it writes locally: output tokens per
+  minute across every open session, and how long since anything happened.
+  `3.4K TOK/MIN · 7 SESSIONS` with a racing trace, or `IDLE 45M` with a slow one.
+- **The session window** as a big number, its reset countdown, and a bar.
+- **The other windows** as rings: the week, plus any per-model weekly cap your
+  plan carries.
+- **A 12-hour trend** of the session window, so you can see when you burned it.
+- **Live while open.** The panel refreshes every minute as long as it is on
+  screen and says `● LIVE` when the reading is under two minutes old.
+- **Honest when it cannot know.** Stale data turns amber and says how old it is.
+  No data is a flat line with `NO SIGNAL`.
+
+Right-click for a plain text menu and the theme switcher.
 
 ## Themes
 
-Right-click the menu bar item, open **THEME**, pick one. The choice is
-saved in `~/.config/pulse-limits/theme` (or `./pulse-limits.5m.sh --theme
-synth` from a terminal). The data and the animation are shared.
+Six looks, same data. Right-click the menu bar item, open **THEME**, pick one.
 
-- `crt`     phosphor patient monitor, scanlines, 5x7 pixel font (default)
-- `modern`  a macOS widget: system font, cards, follows light/dark mode
-- `cyber`   neon HUD: chamfered panels, chromatic-aberration digits, hex stream
-- `term`    a Nord-palette TUI: box drawing, `[|||...]` meters, block-char trend
-- `synth`   synthwave: sunset, perspective grid, the trend as a skyline
-- `analog`  VU meter and round gauges on cream dials, chart-recorder strip
-            (no trend in this one)
+| CRT | Modern | Analog |
+|:---:|:---:|:---:|
+| <img src="docs/crt.png" width="300" alt="CRT theme"> | <img src="docs/modern.png" width="300" alt="Modern theme"> | <img src="docs/analog.png" width="300" alt="Analog theme"> |
+| Phosphor monitor, scanlines, 5x7 pixel font | A macOS widget, follows light and dark mode | VU meter, round gauges, chart-recorder strip |
 
-Preview any of them without SwiftBar by adding `?theme=<name>` before the
-`#` in the page URL (see the last section).
+<p align="center">
+  <img src="themes-preview.png" width="700" alt="All six themes: crt, modern, cyber, term, synth, analog">
+</p>
 
-## What the monitor shows
-
-- **Session panel**: the heartbeat on the left, its rate set by what Claude
-  Code is doing right now: `2.4K TOK/MIN · 3 SESSIONS` and a fast beat while
-  replies are streaming, `IDLE 45M` and a slow one when nothing is going on.
-  The big percentage and reset countdown on the right; a bar along the
-  bottom filled to the same percentage. Green, amber from 60 %, red from
-  85 %. Amber when the data is stale, a flat line with `NO SIGNAL` when
-  there is none.
-- **Rings**: one per remaining window (WEEK, plus any per-model weekly cap
-  the plan carries), percentage inside, reset countdown under it.
-- **Trend**: the last 12 hours of session usage, one bar per ~20 minutes.
-- **Footer**: when the data was fetched, the next reset, extra-usage credits
-  once you have spent any, and the error with the age of the last good
-  reading when something is wrong.
-
-## How it works
-
-1. `security find-generic-password -s "Claude Code-credentials" -w` reads the
-   OAuth token Claude Code already keeps in your Keychain. The same item
-   carries `subscriptionType` and `rateLimitTier`, which is where the plan
-   label comes from.
-2. One `GET https://api.anthropic.com/api/oauth/usage` with that bearer token
-   and the header `anthropic-beta: oauth-2025-04-20`. This is the call behind
-   `/usage` in Claude Code. It is undocumented, so it can change without
-   notice; when it does the monitor shows an error instead of wrong numbers.
-3. The JSON is cached in `~/.cache/pulse-limits/usage.json`, and every live
-   reading appends a row to `history.tsv` for the trend strip. Live calls are
-   at most one per 90 s; the plugin re-runs every 5 min.
-4. The script packs the numbers as base64 JSON into the URL fragment of
-   `panel.html` and writes that URL to `~/.cache/pulse-limits/panel.url`.
-   The page reads `location.hash`, draws everything on a canvas, and
-   animates the trace. Countdowns tick live in the page.
-   While the panel is open the helper runs `pulse-limits.5m.sh --payload`
-   on show and every 60 s (a fresh fetch, JSON only, throttled to one call
-   per 20 s) and hands the result to `window.pulse.usage(...)`, so the
-   numbers update in place and the header says `● LIVE` whenever the
-   reading is under two minutes old. The API is only polled that often
-   while you are looking.
-5. `bin/pulse-menubar` draws the menu bar item as one image, text then ring,
-   like the battery indicator: 2x PNG, one per menu bar appearance, put on
-   the title line with `image=… width=W height=18`. Without it the title
-   falls back to plain text.
-6. A click runs `open-monitor.sh`, which shows `bin/pulse-popover`: a
-   small Swift program with one WKWebView in a borderless, non-activating
-   panel under the mouse. It hides on a click outside, Escape, or a second
-   click on the icon. It stays resident, page unloaded, so the next click
-   shows it in ~50 ms instead of the ~400 ms WebKit needs to start; after
-   10 idle minutes it exits (`PULSE_IDLE_EXIT` seconds to change). The
-   launcher toggles it with SIGUSR1. SwiftBar's own webview popover would
-   do the job too but paints a "SwiftBar: pulse-limits" title bar that
-   cannot be turned off; if the helper is not built the script falls back
-   to it automatically.
-7. Activity comes from the transcripts Claude Code writes under
-   `~/.claude/projects/*/*.jsonl`: output tokens of assistant lines stamped
-   in the last minute, deduplicated by message id (a streaming reply is
-   written several times), plus seconds since any transcript was touched.
-   The helper measures it every 2 s while the panel is open and pushes it
-   into the page; `pulse-popover --activity` prints one sample, which the
-   plugin embeds as the initial value. About 30 ms per sample.
-8. The plugin declares `runInBash=false`, so SwiftBar executes the script
-   and the launcher directly. Its default is `zsh -l -c …`, which loads
-   your login profile (nvm, brew shellenv) on every run and every click,
-   about half a second here.
-
-The token is never written anywhere. The only network traffic is that one GET.
-
-Claude Code refreshes the token roughly hourly while it runs. If it has not
-run for a while the token expires, the API answers 401, and the monitor turns
-amber with `TOKEN EXPIRED`. Open Claude Code once and it heals. Refreshing
-the token from here is deliberately not done: rotating it behind Claude
-Code's back could log Claude Code out.
+Also **cyber** (neon HUD with chromatic-aberration digits), **term** (a Nord-palette
+TUI with `[|||...]` meters) and **synth** (sunset, perspective grid, the trend as a
+city skyline).
 
 ## Install
 
-One line, with Homebrew (once the repo is public):
+You need macOS, [Homebrew](https://brew.sh), the Xcode Command Line Tools, and a
+Claude Code login (run `claude` once).
 
-    brew install dnacenta/tap/pulse-limits && pulse-limits install
+**Homebrew** (recommended):
 
-Or the installer script, which also installs jq and SwiftBar if missing:
+```sh
+brew install --cask swiftbar          # if you do not have SwiftBar yet
+brew install dnacenta/tap/pulse-limits
+pulse-limits install
+```
 
-    curl -fsSL https://raw.githubusercontent.com/dnacenta/pulse-limits/main/install.sh | bash
+**One-line installer**, which also installs jq and SwiftBar if they are missing:
 
-Either way you need macOS, Homebrew, the Xcode Command Line Tools (the two
-helpers are compiled on your machine, ~10 s) and a Claude Code login in the
-Keychain: run `claude` once. The installer is safe to re-run; it updates in
-place. `./install.sh --uninstall` or `pulse-limits uninstall` removes it.
+```sh
+curl -fsSL https://raw.githubusercontent.com/dnacenta/pulse-limits/main/install.sh | bash
+```
 
-By hand:
+**By hand:**
 
-    git clone https://github.com/dnacenta/pulse-limits.git
-    cd pulse-limits && ./build.sh && ./pulse-limits install
+```sh
+git clone https://github.com/dnacenta/pulse-limits.git
+cd pulse-limits && ./build.sh && ./pulse-limits install
+```
+
+`./build.sh` compiles the two small Swift helpers (about ten seconds). Every path
+is safe to re-run and updates in place. Remove with `pulse-limits uninstall`.
 
 ## The `pulse-limits` command
 
-    pulse-limits install       link the plugin into SwiftBar and start it
-    pulse-limits uninstall     unlink it, drop cache and settings
-    pulse-limits theme NAME    crt | modern | cyber | term | synth | analog
-    pulse-limits refresh       force a live fetch now
-    pulse-limits open          show or hide the monitor
-    pulse-limits status        print the current reading as JSON
+```
+pulse-limits install       link the plugin into SwiftBar and start it
+pulse-limits uninstall     unlink it, drop cache and settings
+pulse-limits theme NAME    crt | modern | cyber | term | synth | analog
+pulse-limits refresh       force a live fetch now
+pulse-limits open          show or hide the monitor
+pulse-limits status        print the current reading as JSON
+```
 
-SwiftBar's own menu is hidden by the plugin metadata; manage it from the
-terminal (`pkill SwiftBar`, `open -a SwiftBar`,
-`open "swiftbar://refreshallplugins"`).
+## How it works
+
+Everything is a Bash script, one HTML file, and two tiny Swift programs.
+
+1. **Credentials.** `security find-generic-password -s "Claude Code-credentials"`
+   reads the OAuth token Claude Code stores in your Keychain. The same item
+   carries your plan tier, which is where the `MAX 20X` badge comes from.
+2. **Usage.** One `GET https://api.anthropic.com/api/oauth/usage` with that token.
+   It is the call behind `/usage` in Claude Code. It is undocumented, so it may
+   change without notice; when it does, the monitor shows an error instead of a
+   wrong number.
+3. **Activity.** Claude Code writes every turn to `~/.claude/projects/*/*.jsonl`.
+   The helper sums the output tokens of assistant lines stamped in the last
+   minute, deduplicated by message id because a streaming reply is written
+   several times, and notes when any transcript was last touched. About 30 ms.
+4. **The page.** The script packs the numbers as base64 JSON into the URL
+   fragment of `panel.html`. The page reads it, draws everything on a canvas,
+   and animates the trace. Countdowns tick in the page.
+5. **The popover.** `bin/pulse-popover` is a borderless, non-activating panel
+   with one WKWebView, shown under the mouse. It stays resident for ten idle
+   minutes so the next click is instant, pushes fresh activity every two
+   seconds and fresh usage every minute while visible, and exits on its own.
+   SwiftBar's built-in webview popover would work too but paints a title bar
+   that cannot be turned off; the script falls back to it if the helper is
+   missing.
+6. **The menu bar image.** `bin/pulse-menubar` renders the number and the ring
+   as one 2x PNG in the system menu bar font, one per menu bar appearance.
+
+The plugin declares `runInBash=false` so SwiftBar executes it directly. Its
+default wraps every run and click in `zsh -l -c`, which loads your login
+profile each time, half a second on a machine with nvm.
+
+Claude Code refreshes the token roughly hourly while it runs. If it has not
+run for a while, the API answers 401 and the monitor turns amber with
+`TOKEN EXPIRED`. Open Claude Code once and it heals. Refreshing the token from
+here is deliberately not done: rotating it behind Claude Code's back could log
+Claude Code out.
+
+## Privacy
+
+- The token is read from the Keychain on each run and never written anywhere.
+- The only network traffic is the usage request to `api.anthropic.com`.
+- Transcripts are read locally for token counts and timestamps only; their
+  content is never parsed beyond the `usage` field.
+- Cache and settings live in `~/.cache/pulse-limits` and `~/.config/pulse-limits`.
 
 ## Tuning
 
-Top of `pulse-limits.5m.sh`: `MIN_INTERVAL`, `HISTORY_HOURS`, popover size.
-Top of the script in `panel.html`: the palette `C`, the `tone` thresholds,
-the BPM mapping in `bpmNow()` (40 idle, 60 + 60·log10(1 + tok/100) busy,
-capped at 180), trace speed, and the ECG shape (a sum of five gaussians:
-P, Q, R, S, T). Rename the script to change the cadence
-(`pulse-limits.2m.sh`, etc.).
+Top of `pulse-limits.5m.sh`: the live-call throttle, trend depth, popover size.
+In `panel.html`: each theme's palette, the tone thresholds (60 % amber, 85 % red),
+the BPM mapping in `bpmNow()`, and the ECG shape (a sum of five gaussians: P, Q,
+R, S, T). Rename the script to change the cadence (`pulse-limits.2m.sh`).
 
-Force a live call: Option-click the header of the right-click menu, or run
-`./pulse-limits.5m.sh --reset`.
+Preview a theme without SwiftBar:
 
-## Preview without SwiftBar
+```sh
+npx playwright screenshot --viewport-size=520,316 --wait-for-timeout=1500 \
+  "file://$PWD/panel.html?theme=synth#$(printf '%s' '{"plan":"MAX 20X","source":"LIVE","status":"","hint":"","fetched":0,"history":[],"windows":[{"label":"SESSION","pct":63,"resets":null}],"credits":null,"activity":{"tok_per_min":1200,"idle_s":2,"sessions":1}}' | base64)" out.png
+```
 
-    npx playwright screenshot --viewport-size=520,316 --wait-for-timeout=1500 \
-      "file://$PWD/panel.html?theme=synth#$(printf '%s' '{"plan":"MAX 20X","source":"LIVE","status":"","hint":"","fetched":0,"history":[],"windows":[{"label":"SESSION","pct":63,"resets":null}],"credits":null,"activity":{"tok_per_min":1200,"idle_s":2,"sessions":1}}' | base64)" out.png
-
-`attic/claude64.5m.sh` is the earlier Commodore 64 text-only version.
+`attic/claude64.5m.sh` is where this started: a Commodore 64 boot screen in
+plain text.
 
 ## License
 
 GNU Affero General Public License v3.0 or later. Copyright (C) 2026 Daniel Nacenta.
-See `LICENSE`.
+See [LICENSE](LICENSE).
