@@ -102,26 +102,36 @@ Code's back could log Claude Code out.
 
 ## Install
 
-    brew install --cask swiftbar
-    mkdir -p ~/.config/swiftbar/plugins
-    ln -s ~/Code/Projects/pulse-limits/pulse-limits.5m.sh ~/.config/swiftbar/plugins/
-    defaults write com.ameba.SwiftBar PluginDirectory "$HOME/.config/swiftbar/plugins"
-    open -a SwiftBar
+One line, with Homebrew (once the repo is public):
 
-Then build the popover helper once (needs the Xcode Command Line Tools):
+    brew install dnacenta/tap/pulse-limits && pulse-limits install
 
-    ./build.sh
+Or the installer script, which also installs jq and SwiftBar if missing:
 
-Needs `jq` (`brew install jq`). Runs on the bash 3.2 that ships with macOS.
-`panel.html`, `open-monitor.sh` and `bin/` must sit next to the script; the
-symlink is resolved with `readlink -f`.
+    curl -fsSL https://raw.githubusercontent.com/dnacenta/pulse-limits/main/install.sh | bash
 
-SwiftBar's own menu is hidden by the plugin metadata. Manage it from the
-terminal:
+Either way you need macOS, Homebrew, the Xcode Command Line Tools (the two
+helpers are compiled on your machine, ~10 s) and a Claude Code login in the
+Keychain: run `claude` once. The installer is safe to re-run; it updates in
+place. `./install.sh --uninstall` or `pulse-limits uninstall` removes it.
 
-    pkill SwiftBar                        # quit
-    open -a SwiftBar                      # relaunch
-    open "swiftbar://refreshallplugins"   # re-run now
+By hand:
+
+    git clone https://github.com/dnacenta/pulse-limits.git
+    cd pulse-limits && ./build.sh && ./pulse-limits install
+
+## The `pulse-limits` command
+
+    pulse-limits install       link the plugin into SwiftBar and start it
+    pulse-limits uninstall     unlink it, drop cache and settings
+    pulse-limits theme NAME    crt | modern | cyber | term | synth | analog
+    pulse-limits refresh       force a live fetch now
+    pulse-limits open          show or hide the monitor
+    pulse-limits status        print the current reading as JSON
+
+SwiftBar's own menu is hidden by the plugin metadata; manage it from the
+terminal (`pkill SwiftBar`, `open -a SwiftBar`,
+`open "swiftbar://refreshallplugins"`).
 
 ## Tuning
 

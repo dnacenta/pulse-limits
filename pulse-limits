@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# pulse-limits: manage the PulseLimits SwiftBar plugin from the terminal.
+#
+#   pulse-limits install       link the plugin into SwiftBar and start it
+#   pulse-limits uninstall     unlink it, drop cache and settings
+#   pulse-limits theme NAME    crt | modern | cyber | term | synth | analog
+#   pulse-limits refresh       force a live fetch now
+#   pulse-limits open          show or hide the monitor
+#   pulse-limits status        print the current reading as JSON
+#
+# Works from a git checkout (this file next to pulse-limits.5m.sh) and from a
+# Homebrew install (bin/pulse-limits with the plugin under opt/pulse-limits/libexec,
+# a path that stays valid across `brew upgrade`).
+set -euo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+if   [[ -f "$HERE/pulse-limits.5m.sh" ]]; then LIB="$HERE"
+elif [[ -f "$HERE/../opt/pulse-limits/libexec/pulse-limits.5m.sh" ]]; then LIB=$(cd "$HERE/../opt/pulse-limits/libexec" && pwd)
+else
+  REAL=$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")
+  [[ -f "$REAL/../libexec/pulse-limits.5m.sh" ]] && LIB=$(cd "$REAL/../libexec" && pwd) || { echo "pulse-limits: cannot find pulse-limits.5m.sh" >&2; exit 1; }
+fi
+PLUGIN="pulse-limits.5m.sh"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/pulse-limits"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pulse-limits"
+plugin_dir() { local d; d=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null || true); printf '%s' "${d:-$HOME/.config/swiftbar/plugins}"; }
+refresh() { open "swiftbar://refreshallplugins" 2>/dev/null || true; }
+
+case "${1:-help}" in
+  install)
+    [[ -d /Applications/SwiftBar.app ]] || { echo "SwiftBar is not installed:  brew install --cask swiftbar" >&2; exit 1; }
+    command -v jq >/dev/null || { echo "jq is not installed:  brew install jq" >&2; exit 1; }
+    [[ -x "$LIB/bin/pulse-popover" && -x "$LIB/bin/pulse-menubar" ]] || (cd "$LIB" && ./build.sh)
+    d=$(plugin_dir); mkdir -p "$d"
+    defaults write com.ameba.SwiftBar PluginDirectory "$d"
+    ln -sfn "$LIB/$PLUGIN" "$d/$PLUGIN"
+    security find-generic-password -s "Claude Code-credentials" >/dev/null 2>&1 \
+      || echo "warning: no Claude Code login in the Keychain. Run 'claude' once and log in; the widget reads that token." >&2
+    pkill -f bin/pulse-popover 2>/dev/null || true
+    if pgrep -xq SwiftBar; then refresh; else open -a SwiftBar; fi
+    echo "linked $d/$PLUGIN -> $LIB/$PLUGIN"
+    echo "Look for the ring at the right of the menu bar. Left-click opens the monitor, right-click picks a theme." ;;
+  uninstall)
+    pkill -f bin/pulse-popover 2>/dev/null || true
+    rm -f "$(plugin_dir)/$PLUGIN"; rm -rf "$CACHE_DIR" "$CONFIG_DIR"; refresh
+    echo "unlinked. SwiftBar itself is untouched." ;;
+  theme)   "$LIB/$PLUGIN" --theme "${2:-}" && refresh && echo "theme: ${2}" ;;
+  refresh) "$LIB/$PLUGIN" --reset; refresh; echo "refreshing" ;;
+  open)    exec "$LIB/open-monitor.sh" ;;
+  status)  "$LIB/$PLUGIN" --payload | jq . ;;
+  -h|--help|help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "pulse-limits: unknown command '$1' (try: pulse-limits help)" >&2; exit 64 ;;
+esac
