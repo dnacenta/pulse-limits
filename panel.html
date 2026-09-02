@@ -1,0 +1,571 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PulseLimits</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #111416; }
+  #screen { position: absolute; left: 10px; top: 8px; right: 10px; bottom: 8px; border-radius: 14px; overflow: hidden; background: #04100a; }
+  canvas  { position: absolute; left: 0; top: 0; }
+  canvas.pixel { image-rendering: pixelated; }
+  .fx     { position: absolute; inset: 0; pointer-events: none; display: none; }
+  .scan   { background: repeating-linear-gradient(0deg, rgba(0,0,0,.30) 0 1px, transparent 1px 3px); }
+  .vig    { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 58%, rgba(0,0,0,.6) 100%); }
+  .glow   { background: #7dffb0; opacity: .02; animation: flicker 3.7s infinite; mix-blend-mode: screen; }
+  @keyframes flicker { 0%, 100% { opacity: .015 } 47% { opacity: .03 } 52% { opacity: .012 } 70% { opacity: .028 } }
+  body.crt #screen { box-shadow: inset 0 0 48px rgba(0,0,0,.9), 0 0 0 2px #1e2426, 0 0 0 3px #0a0c0d; }
+  body.crt .scan, body.crt .vig, body.crt .glow { display: block; }
+  body.cyber .scan { display: block; opacity: .45; }
+  body.modern { background: #1c1c1e; }
+  body.modern #screen { border-radius: 16px; }
+  body.synth #screen, body.cyber #screen { box-shadow: 0 0 0 1px rgba(255,255,255,.08); }
+  body.analog #screen { box-shadow: inset 0 2px 0 rgba(255,255,255,.06), 0 0 0 2px #0e0d0b; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <canvas id="c"></canvas>
+  <div class="fx scan"></div>
+  <div class="fx vig"></div>
+  <div class="fx glow"></div>
+</div>
+<script>
+(() => {
+  // =========================================================================
+  // shared core: data, activity, formatting, ECG model, drawing primitives
+  // =========================================================================
+  const G = {
+    A:'.###.|#...#|#...#|#####|#...#|#...#|#...#', B:'####.|#...#|#...#|####.|#...#|#...#|####.',
+    C:'.###.|#...#|#....|#....|#....|#...#|.###.', D:'####.|#...#|#...#|#...#|#...#|#...#|####.',
+    E:'#####|#....|#....|####.|#....|#....|#####', F:'#####|#....|#....|####.|#....|#....|#....',
+    G:'.###.|#...#|#....|#.###|#...#|#...#|.####', H:'#...#|#...#|#...#|#####|#...#|#...#|#...#',
+    I:'.###.|..#..|..#..|..#..|..#..|..#..|.###.', J:'..###|...#.|...#.|...#.|...#.|#..#.|.##..',
+    K:'#...#|#..#.|#.#..|##...|#.#..|#..#.|#...#', L:'#....|#....|#....|#....|#....|#....|#####',
+    M:'#...#|##.##|#.#.#|#.#.#|#...#|#...#|#...#', N:'#...#|#...#|##..#|#.#.#|#..##|#...#|#...#',
+    O:'.###.|#...#|#...#|#...#|#...#|#...#|.###.', P:'####.|#...#|#...#|####.|#....|#....|#....',
+    Q:'.###.|#...#|#...#|#...#|#.#.#|#..#.|.##.#', R:'####.|#...#|#...#|####.|#.#..|#..#.|#...#',
+    S:'.####|#....|#....|.###.|....#|....#|####.', T:'#####|..#..|..#..|..#..|..#..|..#..|..#..',
+    U:'#...#|#...#|#...#|#...#|#...#|#...#|.###.', V:'#...#|#...#|#...#|#...#|#...#|.#.#.|..#..',
+    W:'#...#|#...#|#...#|#.#.#|#.#.#|##.##|#...#', X:'#...#|#...#|.#.#.|..#..|.#.#.|#...#|#...#',
+    Y:'#...#|#...#|.#.#.|..#..|..#..|..#..|..#..', Z:'#####|....#|...#.|..#..|.#...|#....|#####',
+    0:'.###.|#...#|#..##|#.#.#|##..#|#...#|.###.', 1:'..#..|.##..|..#..|..#..|..#..|..#..|.###.',
+    2:'.###.|#...#|....#|...#.|..#..|.#...|#####', 3:'#####|...#.|..#..|...#.|....#|#...#|.###.',
+    4:'...#.|..##.|.#.#.|#..#.|#####|...#.|...#.', 5:'#####|#....|####.|....#|....#|#...#|.###.',
+    6:'..##.|.#...|#....|####.|#...#|#...#|.###.', 7:'#####|....#|...#.|..#..|.#...|.#...|.#...',
+    8:'.###.|#...#|#...#|.###.|#...#|#...#|.###.', 9:'.###.|#...#|#...#|.####|....#|...#.|.##..',
+    '%':'##...|##..#|...#.|..#..|.#...|#..##|...##', ':':'.....|..#..|..#..|.....|..#..|..#..|.....',
+    '.':'.....|.....|.....|.....|.....|.##..|.##..', '-':'.....|.....|.....|#####|.....|.....|.....',
+    '/':'....#|...#.|...#.|..#..|.#...|.#...|#....', '?':'.###.|#...#|....#|...#.|..#..|.....|..#..',
+    '!':'..#..|..#..|..#..|..#..|..#..|.....|..#..', '+':'.....|..#..|..#..|#####|..#..|..#..|.....',
+    '●':'.....|.###.|#####|#####|#####|.###.|.....', '○':'.....|.###.|#...#|#...#|#...#|.###.|.....',
+    '·':'.....|.....|.....|.##..|.##..|.....|.....', ' ':'.....|.....|.....|.....|.....|.....|.....',
+  };
+  const FONT = {}; for (const k in G) FONT[k] = G[k].split('|');
+
+  // ---- data ------------------------------------------------------------------
+  function load() {
+    try {
+      const h = location.hash.slice(1); if (!h) return null;
+      const bytes = Uint8Array.from(atob(h), c => c.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch (e) { return null; }
+  }
+  const D = { plan: '', source: '', fetched: 0, status: 'NO DATA', hint: '', windows: [], history: [],
+              credits: null, activity: null, theme: 'crt' };
+  let session = null, others = [], sessionPct = 0, alive = false;
+  function derive() {
+    session = D.windows.find(w => w.label === 'SESSION') || null;
+    others = D.windows.filter(w => w.label !== 'SESSION');
+    sessionPct = session ? Math.round(session.pct) : 0;
+    alive = D.windows.length > 0;
+  }
+  function applyUsage(p) { if (!p || typeof p !== 'object') return; Object.assign(D, p); derive(); }
+  applyUsage(load());
+
+  const act = { tok: null, idle: null, sessions: 0 };
+  function applyActivity(a) {
+    if (!a || typeof a.tok_per_min !== 'number') return;
+    act.tok = a.tok_per_min; act.idle = a.idle_s; act.sessions = a.sessions || 0;
+  }
+  applyActivity(D.activity);
+  const THEME = (location.search.match(/theme=(\w+)/) || [])[1] || D.theme || 'crt';
+  window.pulse = { activity: applyActivity, usage: p => {
+    applyUsage(p); applyActivity(p && p.activity);
+    if (p && p.theme && p.theme !== THEME && !location.search) {       // theme changed from the menu: reload into it
+      location.hash = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(D))));
+      location.reload();
+    }
+  } };
+
+  // ---- formatting --------------------------------------------------------------
+  const pad2 = n => String(n).padStart(2, '0');
+  const hhmm = ms => { const d = new Date(ms); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+  function span(ms) {
+    let s = Math.max(0, Math.floor(ms / 1000));
+    const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    return d > 0 ? d + 'D ' + pad2(h) + 'H' : h > 0 ? h + 'H ' + pad2(m) + 'M' : m + 'M';
+  }
+  const short = s => s < 60 ? s + 'S' : s < 3600 ? Math.floor(s / 60) + 'M' : s < 86400 ? Math.floor(s / 3600) + 'H' : Math.floor(s / 86400) + 'D';
+  const fmtK = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K' : String(n);
+  const resetMs = w => { const r = w && w.resets ? Date.parse(w.resets) : NaN; return isNaN(r) ? NaN : r - Date.now(); };
+  const resetText = w => { const m = resetMs(w); return isNaN(m) ? 'RESET ?' : 'RESET ' + span(m); };
+  const ageSec = () => Math.max(0, Math.floor(Date.now() / 1000 - D.fetched));
+  const fresh = () => alive && !D.status && ageSec() < 120;
+  function nextReset() {
+    const now = Date.now(), ts = D.windows.map(w => Date.parse(w.resets)).filter(v => v > now);
+    return ts.length ? hhmm(Math.min(...ts)) : '?';
+  }
+  function bpmNow() {
+    if (!alive) return 0;
+    if (act.tok === null) return 60;
+    if (act.tok > 0) return Math.min(180, 60 + 60 * Math.log10(1 + act.tok / 100));
+    return act.idle < 180 ? 52 : 40;
+  }
+  const busy = () => act.tok !== null && act.tok > 0;
+  function activityLabel() {
+    if (act.tok === null) return null;
+    if (act.tok > 0) return fmtK(act.tok) + ' TOK/MIN' + (act.sessions > 1 ? ' · ' + act.sessions + ' SESSIONS' : '');
+    return 'IDLE ' + short(act.idle);
+  }
+  // status line pieces: [text, kind] kind = ok | stale | dead | old
+  function statusInfo(t) {
+    if (!alive) return ['? ' + D.status, 'dead'];
+    if (D.status) return ['○ ' + D.status, 'stale'];
+    if (fresh()) return [(Math.floor(t / 1000) % 2 ? '● ' : '  ') + 'LIVE', 'ok'];
+    return ['○ ' + hhmm(D.fetched * 1000), 'old'];
+  }
+  function buckets(n) {                     // 12 h of session history in n buckets (max per bucket, -1 empty)
+    const now = Date.now(), bucketMs = 12 * 3600 * 1000 / n, max = new Array(n).fill(-1);
+    for (const [ts, pct] of D.history) {
+      const b = n - 1 - Math.floor((now - ts * 1000) / bucketMs);
+      if (b >= 0 && b < n) max[b] = Math.max(max[b], pct);
+    }
+    return max;
+  }
+
+  // ---- canvas ------------------------------------------------------------------
+  const screen = document.getElementById('screen'), cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  let W = 500, H = 300;
+  function fit() {
+    const r = screen.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    W = Math.round(r.width); H = Math.round(r.height);
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', fit); fit();
+
+  function px(str, x, y, s, color) {          // pixel text
+    ctx.fillStyle = color;
+    let cx = x;
+    for (const ch of String(str).toUpperCase()) {
+      const g = FONT[ch] || FONT[' '];
+      for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++)
+        if (g[r][c] === '#') ctx.fillRect(cx + c * s, y + r * s, s, s);
+      cx += 6 * s;
+    }
+    return cx - x - s;
+  }
+  const tw = (str, s) => String(str).length * 6 * s - s;
+  function txt(str, x, y, font, color, align = 'left', spacing = 0) {   // vector text
+    ctx.font = font; ctx.fillStyle = color; ctx.textBaseline = 'alphabetic';
+    if (!spacing) { ctx.textAlign = align; ctx.fillText(str, x, y); ctx.textAlign = 'left'; return ctx.measureText(str).width; }
+    const chars = [...String(str)], widths = chars.map(c => ctx.measureText(c).width);
+    const total = widths.reduce((a, b) => a + b, 0) + spacing * (chars.length - 1);
+    let cx = align === 'right' ? x - total : align === 'center' ? x - total / 2 : x;
+    ctx.textAlign = 'left';
+    chars.forEach((c, i) => { ctx.fillText(c, cx, y); cx += widths[i] + spacing; });
+    return total;
+  }
+  const measure = (str, font) => { ctx.font = font; return ctx.measureText(str).width; };
+  function rr(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function ring(cx, cy, r, pct, s) {
+    ctx.lineWidth = s.width || 6; ctx.lineCap = s.cap || 'butt';
+    if (s.dash) ctx.setLineDash(s.dash);
+    ctx.strokeStyle = s.track; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    if (pct > 0) {
+      ctx.strokeStyle = s.color;
+      if (s.glow) { ctx.shadowColor = s.color; ctx.shadowBlur = s.glow; }
+      ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(pct, 100) / 100); ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+    ctx.setLineDash([]);
+  }
+  function trendBars(x, base, n, bw, gap, h, colorOf, empty, radius) {
+    const b = buckets(n);
+    for (let i = 0; i < n; i++) {
+      const bx = x + i * (bw + gap);
+      if (b[i] < 0) { if (empty) { ctx.fillStyle = empty; ctx.fillRect(bx, base - 1, bw, 1); } continue; }
+      const bh = Math.max(2, Math.round(b[i] * h / 100));
+      ctx.fillStyle = colorOf(b[i]);
+      if (radius) { rr(bx, base - bh, bw, bh, Math.min(radius, bw / 2)); ctx.fill(); } else ctx.fillRect(bx, base - bh, bw, bh);
+    }
+  }
+
+  // ---- ECG model ------------------------------------------------------------------
+  const ECG = {
+    W: 0, cols: null, head: 0, ph: 0, acc: 0, beat: 0,
+    init(w) { if (this.W !== w) { this.W = w; this.cols = new Float32Array(w); this.head = 0; } },
+    shape(p) { const g = (a, m, s) => a * Math.exp(-((p - m) ** 2) / (2 * s * s));
+               return g(.12, .16, .03) + g(-.12, .31, .012) + g(1, .335, .013) + g(-.28, .362, .012) + g(.26, .56, .05); },
+    step(dt, bpm) {
+      const speed = 90; this.acc += speed * dt;
+      while (this.acc >= 1) {
+        this.head = (this.head + 1) % this.W;
+        if (bpm > 0) {
+          const b = this.ph; this.ph = (this.ph + (bpm / 60) / speed) % 1;
+          if (b < .335 && this.ph >= .335) this.beat = 1;
+          this.cols[this.head] = this.shape(this.ph);
+        } else this.cols[this.head] = 0;
+        this.acc -= 1;
+      }
+      this.beat = Math.max(0, this.beat - dt * 4);
+    },
+    draw(x, base, amp, s) {     // s: color, width, fade, glow, gap, dot, minAlpha
+      const W = this.W, gap = s.gap ?? 18;
+      ctx.lineWidth = s.width || 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = s.color;
+      if (s.fade) {
+        for (let i = 1; i < W; i++) {
+          const age = (this.head - i + W) % W; if (age > W - gap) continue;
+          ctx.globalAlpha = Math.max(s.minAlpha ?? .07, 1 - age / W);
+          ctx.beginPath(); ctx.moveTo(x + i - 1, base - this.cols[i - 1] * amp); ctx.lineTo(x + i, base - this.cols[i] * amp); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        if (s.glow) { ctx.shadowColor = s.color; ctx.shadowBlur = s.glow; }
+        ctx.beginPath(); let pen = false;
+        for (let i = 0; i < W; i++) {
+          const age = (this.head - i + W) % W;
+          if (age > W - gap) { pen = false; continue; }
+          const X = x + i, Y = base - this.cols[i] * amp;
+          if (!pen) { ctx.moveTo(X, Y); pen = true; } else ctx.lineTo(X, Y);
+        }
+        ctx.stroke(); ctx.shadowBlur = 0;
+      }
+      if (s.dot !== false) {
+        ctx.fillStyle = s.color; ctx.shadowColor = s.color; ctx.shadowBlur = s.dotGlow ?? 10;
+        ctx.beginPath(); ctx.arc(x + this.head, base - this.cols[this.head] * amp, 2, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+      }
+    },
+  };
+
+  // =========================================================================
+  // themes
+  // =========================================================================
+  const THEMES = {};
+
+  // ---- 1. CRT: phosphor patient monitor -------------------------------------------
+  THEMES.crt = { pixel: true, ecg: 336, draw(t, dt) {
+    const C = { bg: '#04100a', grid: '#0b2a15', track: '#123a20', green: '#5cff8a', text: '#b9ffcb', dim: '#3d8a52', amber: '#ffb63b', red: '#ff5a5a', blue: '#8fd3ff' };
+    const tone = p => p >= 85 ? C.red : p >= 60 ? C.amber : C.green;
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    px('PULSE LIMITS', 14, 12, 2, C.text);
+    if (D.plan) px(D.plan, W - 14 - tw(D.plan, 1), 12, 1, C.blue);
+    const [st, kind] = statusInfo(t);
+    px(st, W - 14 - tw(st, 1), 24, 1, { ok: C.green, stale: C.amber, dead: C.red, old: C.dim }[kind]);
+
+    const BX = 14, BY = 40, BW = 472, BH = 130, TX = BX + 4, BASE = BY + 66;
+    const col = !alive ? C.dim : D.status ? C.amber : tone(sessionPct);
+    ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.strokeRect(BX + .5, BY + .5, BW - 1, BH - 1);
+    ctx.fillStyle = C.grid;
+    for (let x = TX + 6; x < TX + ECG.W; x += 20) for (let y = BY + 16; y < BY + BH - 14; y += 20) ctx.fillRect(x, y, 1, 1);
+    ECG.draw(TX, BASE, 44, { color: col, width: 2, fade: true });
+    const lab = activityLabel();
+    if (lab !== null) {
+      ctx.globalAlpha = .25 + .75 * ECG.beat; ctx.fillStyle = busy() ? C.green : C.dim;
+      ctx.beginPath(); ctx.arc(TX + 9, BY + 13, 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      px(lab, TX + 18, BY + 10, 1, busy() ? C.green : C.dim);
+    }
+    const nx = BX + BW - 8;
+    px('SESSION', nx - tw('SESSION', 1), BY + 12, 1, C.dim);
+    const big = alive ? sessionPct + '%' : '--';
+    px(big, nx - tw(big, 5), BY + 26, 5, col);
+    const sub = alive ? resetText(session) : 'NO SIGNAL';
+    px(sub, nx - tw(sub, 1), BY + 70, 1, alive ? C.dim : C.red);
+    const bx = BX + 6, by = BY + BH - 10, bw = BW - 12;
+    ctx.fillStyle = C.track; ctx.fillRect(bx, by, bw, 3);
+    if (alive) { ctx.fillStyle = col; ctx.fillRect(bx, by, Math.round(bw * sessionPct / 100), 3); }
+    if (!alive && Math.floor(t / 500) % 2 === 0) px('NO SIGNAL', TX + (ECG.W - tw('NO SIGNAL', 2)) / 2, BASE - 22, 2, C.red);
+
+    // rings, then the trend fills whatever width is left
+    const top = BY + BH + 14, r = 26, step = 112;
+    others.slice(0, 3).forEach((w, i) => {
+      const cx = BX + r + 4 + i * step, cy = top + 12 + r, pct = Math.round(w.pct);
+      px(w.label, cx - tw(w.label, 1) / 2, top, 1, C.dim);
+      ring(cx, cy, r, pct, { track: C.track, color: tone(pct), width: 6 });
+      const s = String(pct).length > 2 ? 1 : 2;
+      px(pct + '%', cx - tw(pct + '%', s) / 2, cy - 3.5 * s, s, tone(pct));
+      const rt = resetText(w); px(rt, cx - tw(rt, 1) / 2, cy + r + 10, 1, C.dim);
+    });
+    const ringsEnd = others.length ? BX + 4 + Math.min(others.length, 3) * step - 20 : BX;
+    const tx0 = ringsEnd + 24, bw5 = 5, n = Math.floor((BX + BW - tx0) / bw5), tx = BX + BW - n * bw5, ty = top, th = 54;
+    px('SESSION · 12H', tx, ty, 1, C.dim);
+    trendBars(tx, ty + 12 + th, n, bw5 - 1, 1, th, tone, C.grid);
+    px('-12H', tx, ty + 12 + th + 4, 1, C.dim); px('NOW', tx + n * bw5 - tw('NOW', 1), ty + 12 + th + 4, 1, C.dim);
+
+    const fy = H - 16;
+    if (D.status && alive) px('? ' + D.status + ' · LAST GOOD ' + short(ageSec()) + ' AGO', 14, fy, 1, Math.floor(t / 600) % 2 ? C.red : C.amber);
+    else if (alive) px('UPDATED ' + short(ageSec()) + ' AGO · NEXT RESET ' + nextReset(), 14, fy, 1, C.dim);
+    else if (D.hint) px(D.hint, 14, fy, 1, C.dim);
+    if (D.credits) { const c = 'CREDITS ' + Number(D.credits.used).toFixed(2) + ' ' + D.credits.currency; px(c, W - 14 - tw(c, 1), fy, 1, C.amber); }
+  }};
+
+  // ---- 2. MODERN: a macOS widget ----------------------------------------------------
+  THEMES.modern = { pixel: false, ecg: 300, draw(t, dt) {
+    const dk = matchMedia('(prefers-color-scheme: dark)').matches;
+    const P = dk ? { bg: '#1c1c1e', card: 'rgba(255,255,255,.07)', text: '#f5f5f7', sub: '#98989d', line: 'rgba(255,255,255,.12)', green: '#30d158', amber: '#ffd60a', red: '#ff453a', blue: '#0a84ff' }
+                 : { bg: '#f2f2f7', card: '#ffffff', text: '#1c1c1e', sub: '#6e6e73', line: 'rgba(0,0,0,.08)', green: '#34c759', amber: '#ff9f0a', red: '#ff3b30', blue: '#007aff' };
+    document.body.style.background = dk ? '#1c1c1e' : '#e5e5ea';
+    const tone = p => p >= 85 ? P.red : p >= 60 ? P.amber : P.green;
+    const SF = '-apple-system, system-ui, "Helvetica Neue", sans-serif';
+    ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
+    txt('Pulse Limits', 16, 26, '600 15px ' + SF, P.text);
+    if (D.plan) { const pw = measure(D.plan, '600 10px ' + SF) + 14; ctx.fillStyle = P.card; rr(112, 13, pw, 18, 9); ctx.fill(); txt(D.plan, 112 + pw / 2, 26, '600 10px ' + SF, P.sub, 'center'); }
+    const [st, kind] = statusInfo(t);
+    const stText = kind === 'ok' ? (Math.floor(t / 1000) % 2 ? '● Live' : '   Live') : st.charAt(0) + ' ' + st.slice(2).toLowerCase().replace(/^\w/, c => c.toUpperCase());
+    txt(stText, W - 16, 26, '500 12px ' + SF, { ok: P.green, stale: P.amber, dead: P.red, old: P.sub }[kind], 'right');
+
+    const x = 16, y = 40, w = 468, h = 128, col = !alive ? P.sub : D.status ? P.amber : tone(sessionPct);
+    ctx.fillStyle = P.card; rr(x, y, w, h, 12); ctx.fill();
+    ECG.draw(x + 14, y + 62, 38, { color: col, width: 2, fade: false, gap: 18, dotGlow: 6 });
+    txt('Session', x + w - 16, y + 24, '500 12px ' + SF, P.sub, 'right');
+    txt(alive ? sessionPct + '%' : '—', x + w - 16, y + 68, '700 42px ' + SF, col, 'right');
+    txt(alive ? 'Resets in ' + span(resetMs(session)).toLowerCase() : 'No signal', x + w - 16, y + 88, '400 11px ' + SF, alive ? P.sub : P.red, 'right');
+    const lab = activityLabel();
+    if (lab !== null) {
+      ctx.globalAlpha = .3 + .7 * ECG.beat; ctx.fillStyle = busy() ? P.green : P.sub;
+      ctx.beginPath(); ctx.arc(x + 20, y + 17, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      txt(lab.toLowerCase().replace('tok/min', 'tok/min').replace(/^idle/, 'Idle'), x + 30, y + 21, '500 11px ' + SF, busy() ? P.green : P.sub);
+    }
+    ctx.fillStyle = P.line; rr(x + 16, y + h - 16, w - 32, 4, 2); ctx.fill();
+    if (alive) { ctx.fillStyle = col; rr(x + 16, y + h - 16, Math.max(4, (w - 32) * sessionPct / 100), 4, 2); ctx.fill(); }
+
+    const ry = 180, rh = 96, cw = 108, gapc = 10;
+    others.slice(0, 3).forEach((wd, i) => {
+      const cx0 = 16 + i * (cw + gapc), pct = Math.round(wd.pct);
+      ctx.fillStyle = P.card; rr(cx0, ry, cw, rh, 12); ctx.fill();
+      txt(wd.label.charAt(0) + wd.label.slice(1).toLowerCase(), cx0 + 12, ry + 20, '500 11px ' + SF, P.sub);
+      ring(cx0 + 34, ry + 58, 22, pct, { track: P.line, color: tone(pct), width: 5, cap: 'round' });
+      txt(pct + '%', cx0 + 34, ry + 63, '600 13px ' + SF, P.text, 'center');
+      txt(span(resetMs(wd)).toLowerCase(), cx0 + 66, ry + 55, '400 10px ' + SF, P.sub);
+      txt('reset', cx0 + 66, ry + 68, '400 10px ' + SF, P.sub);
+    });
+    const tx = 16 + Math.min(others.length, 3) * (cw + gapc), tw0 = 484 - tx;
+    ctx.fillStyle = P.card; rr(tx, ry, tw0, rh, 12); ctx.fill();
+    txt('Session · 12h', tx + 12, ry + 20, '500 11px ' + SF, P.sub);
+    const n = Math.floor((tw0 - 24) / 5);
+    trendBars(tx + 12, ry + rh - 14, n, 3, 2, 48, tone, P.line, 1.5);
+    txt(alive ? 'Updated ' + short(ageSec()).toLowerCase() + ' ago · next reset ' + nextReset() : (D.hint || '').toLowerCase(), 16, H - 8, '400 10px ' + SF, P.sub);
+    if (D.credits) txt('Credits ' + Number(D.credits.used).toFixed(2) + ' ' + D.credits.currency, W - 16, H - 8, '500 10px ' + SF, P.amber, 'right');
+  }};
+
+  // ---- 3. CYBER: neon HUD ----------------------------------------------------------------
+  THEMES.cyber = { pixel: false, ecg: 330, draw(t, dt) {
+    const P = { bg: '#07060f', cy: '#00f0ff', mg: '#ff2bd6', yl: '#f9f002', red: '#ff3b5c', dim: '#4a5080', text: '#dbe4ff', grid: '#141634' };
+    const tone = p => p >= 85 ? P.red : p >= 60 ? P.yl : P.cy;
+    const F = '"Avenir Next Condensed", "Futura", "Helvetica Neue", sans-serif';
+    ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = P.grid; ctx.lineWidth = 1; ctx.beginPath();
+    for (let i = -H; i < W; i += 26) { ctx.moveTo(i, 0); ctx.lineTo(i + H, H); } ctx.stroke();
+    txt('PULSE//LIMITS', 16, 28, '700 20px ' + F, P.cy, 'left', 3);
+    if (D.plan) txt(D.plan, W - 16, 22, '600 11px ' + F, P.mg, 'right', 2);
+    const [st, kind] = statusInfo(t);
+    txt(st.replace('●', '▶').replace('○', '▷'), W - 16, 36, '600 11px ' + F, { ok: P.yl, stale: P.yl, dead: P.red, old: P.dim }[kind], 'right', 2);
+
+    const x = 14, y = 44, w = 472, h = 126, c = 12, col = !alive ? P.dim : D.status ? P.yl : tone(sessionPct);
+    const cham = () => { ctx.beginPath(); ctx.moveTo(x + c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + h - c); ctx.lineTo(x + w - c, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + c); ctx.closePath(); };
+    cham(); ctx.fillStyle = 'rgba(0,240,255,.04)'; ctx.fill(); ctx.strokeStyle = 'rgba(0,240,255,.5)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = P.mg; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(x + w - 30, y - 3); ctx.lineTo(x + w + 3, y - 3); ctx.lineTo(x + w + 3, y + 30);
+    ctx.moveTo(x + 30, y + h + 3); ctx.lineTo(x - 3, y + h + 3); ctx.lineTo(x - 3, y + h - 30); ctx.stroke();
+    ECG.draw(x + 8, y + 62, 40, { color: col, width: 2, fade: false, glow: 14, dotGlow: 16 });
+    ctx.strokeStyle = 'rgba(0,240,255,.25)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 8 + ECG.head + .5, y + 8); ctx.lineTo(x + 8 + ECG.head + .5, y + h - 20); ctx.stroke();
+    const lab = activityLabel();
+    if (lab !== null) txt((busy() ? '▮ ' : '▯ ') + lab, x + 12, y + 20, '600 11px ' + F, busy() ? P.cy : P.dim, 'left', 1.5);
+    txt('SESSION', x + w - 14, y + 22, '600 11px ' + F, P.dim, 'right', 3);
+    const big = alive ? sessionPct + '%' : '--', bf = '800 48px ' + F, nx = x + w - 14, ny = y + 72;
+    ctx.globalCompositeOperation = 'lighter';
+    txt(big, nx - 2, ny, bf, 'rgba(255,43,214,.9)', 'right'); txt(big, nx + 2, ny, bf, 'rgba(0,240,255,.9)', 'right');
+    ctx.globalCompositeOperation = 'source-over';
+    txt(big, nx, ny, bf, '#ffffff', 'right');
+    txt(alive ? resetText(session) : 'NO SIGNAL', nx, y + 92, '600 11px ' + F, alive ? P.yl : P.red, 'right', 2);
+    const segs = 46, sw = (w - 24) / segs;
+    for (let i = 0; i < segs; i++) { const on = alive && i < Math.round(segs * sessionPct / 100); ctx.fillStyle = on ? col : P.grid; if (on) { ctx.shadowColor = col; ctx.shadowBlur = 6; } ctx.fillRect(x + 12 + i * sw, y + h - 12, sw - 2, 4); ctx.shadowBlur = 0; }
+
+    const top = y + h + 14, r = 25, step = 110;
+    others.slice(0, 3).forEach((wd, i) => {
+      const cx = x + r + 6 + i * step, cy = top + 14 + r, pct = Math.round(wd.pct);
+      txt(wd.label, cx, top + 6, '600 10px ' + F, P.dim, 'center', 2);
+      ring(cx, cy, r, pct, { track: P.grid, color: tone(pct), width: 5, dash: [5, 3], glow: 8 });
+      txt(pct + '%', cx, cy + 5, '700 14px ' + F, P.text, 'center');
+      txt(resetText(wd), cx, cy + r + 16, '600 9px ' + F, P.dim, 'center', 1);
+    });
+    const ringsEnd = others.length ? x + 6 + Math.min(others.length, 3) * step - 20 : x;
+    const tx0 = ringsEnd + 26, n = Math.floor((x + w - tx0) / 5), tx = x + w - n * 5;
+    txt('SESSION · 12H', tx, top + 6, '600 10px ' + F, P.dim, 'left', 2);
+    trendBars(tx, top + 72, n, 4, 1, 50, p => p >= 85 ? P.red : p >= 60 ? P.yl : P.mg, P.grid);
+    let hex = ''; for (let i = 0; i < 44; i++) hex += ((Math.floor(t / 90) * 31 + i * 7919) % 256).toString(16).padStart(2, '0');
+    txt(hex.toUpperCase(), 16, H - 8, '500 9px ui-monospace, Menlo, monospace', P.grid);
+    ctx.fillStyle = P.bg; ctx.fillRect(W - 210, H - 20, 200, 16);
+    txt(alive ? 'UPD ' + short(ageSec()) + ' · RESET ' + nextReset() : (D.hint || ''), W - 16, H - 8, '600 10px ' + F, D.status ? P.yl : P.dim, 'right', 1.5);
+  }};
+
+  // ---- 4. TERM: a Nord TUI ---------------------------------------------------------------
+  THEMES.term = { pixel: false, ecg: 440, draw(t, dt) {
+    const P = { bg: '#2e3440', fg: '#d8dee9', dim: '#4c566a', dim2: '#7b88a1', green: '#a3be8c', yellow: '#ebcb8b', red: '#bf616a', cyan: '#88c0d0', blue: '#81a1c1', mag: '#b48ead' };
+    const tone = p => p >= 85 ? P.red : p >= 60 ? P.yellow : P.green;
+    const F = '12px ui-monospace, Menlo, monospace', LH = 18, X0 = 12;
+    ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
+    const cw = measure('M', F), cols = Math.floor((W - 2 * X0) / cw);
+    const row = (r, segs) => { let cx = X0; for (const [s, c] of segs) { txt(s, cx, 20 + r * LH, F, c); cx += s.length * cw; } };
+    const bar = (label, pct, extra, r) => {
+      const n = 22, f = Math.round(n * pct / 100);
+      row(r, [['│ ', P.dim], [label.padEnd(8).toLowerCase(), P.fg], [String(pct).padStart(3) + '% ', tone(pct)], ['[', P.dim],
+              ['|'.repeat(f), tone(pct)], ['.'.repeat(n - f), P.dim], [']  ', P.dim], [extra.toLowerCase(), P.dim2]]);
+      txt('│', X0 + (cols - 1) * cw, 20 + r * LH, F, P.dim);
+    };
+    const line = (r, left, right) => {
+      const l = '─ ' + left + ' ', rt = right ? ' ' + right + ' ─' : '─';
+      row(r, [['┌', P.dim], [l, P.cyan], ['─'.repeat(Math.max(0, cols - 2 - l.length - rt.length)), P.dim], [rt, P.mag], ['┐', P.dim]]);
+    };
+    const mid = (r, left) => { const l = '─ ' + left + ' '; row(r, [['├', P.dim], [l, P.cyan], ['─'.repeat(Math.max(0, cols - 2 - l.length)), P.dim], ['┤', P.dim]]); };
+    const [st] = statusInfo(t);
+    line(0, 'pulse-limits', (D.plan || '').toLowerCase());
+    if (alive) bar('SESSION', sessionPct, resetText(session).replace('RESET', 'resets in'), 1); else row(1, [['│ ', P.dim], ['? ' + D.status.toLowerCase() + '  ' + (D.hint || '').toLowerCase(), P.red]]);
+    others.slice(0, 3).forEach((wd, i) => bar(wd.label, Math.round(wd.pct), resetText(wd).replace('RESET', 'resets in'), 2 + i));
+    let r = 2 + Math.min(others.length, 3);
+    mid(r, 'activity  ' + (activityLabel() || '').toLowerCase()); r++;
+    const boxTop = 20 + r * LH - 12, boxRows = 5;
+    for (let i = 0; i < boxRows; i++) { txt('│', X0, 20 + (r + i) * LH, F, P.dim); txt('│', X0 + (cols - 1) * cw, 20 + (r + i) * LH, F, P.dim); }
+    ECG.init(Math.floor((cols - 4) * cw)); ECG.draw(X0 + 2 * cw, boxTop + boxRows * LH / 2 + 8, 30, { color: busy() ? P.green : P.dim2, width: 1.5, fade: true, dot: false });
+    if (alive) txt(sessionPct + '%', X0 + (cols - 2) * cw, boxTop + 34, '700 28px ui-monospace, Menlo, monospace', tone(sessionPct), 'right');
+    r += boxRows;
+    mid(r, 'session · 12h'); r++;
+    const b = buckets(cols - 4), blocks = ' ▁▂▃▄▅▆▇█';
+    let cx = X0 + 2 * cw; txt('│', X0, 20 + r * LH, F, P.dim); txt('│', X0 + (cols - 1) * cw, 20 + r * LH, F, P.dim);
+    for (const v of b) { const ch = v < 0 ? '·' : blocks[Math.min(8, Math.max(1, Math.round(v * 8 / 100)))]; txt(ch, cx, 20 + r * LH, F, v < 0 ? P.dim : tone(v)); cx += cw; }
+    r++;
+    const foot = ' ' + st.toLowerCase() + (alive ? '  updated ' + short(ageSec()).toLowerCase() + ' ago  next reset ' + nextReset() : '') + ' ';
+    row(r, [['└', P.dim], ['─', P.dim], [foot, fresh() ? P.green : D.status ? P.yellow : P.dim2], ['─'.repeat(Math.max(0, cols - 3 - foot.length)), P.dim], ['┘', P.dim]]);
+    if (Math.floor(t / 500) % 2 === 0) txt('▮', X0 + (cols - 1) * cw - 2, 20 + (r + 1) * LH, F, P.fg);
+  }};
+
+  // ---- 5. SYNTH: synthwave sunset ------------------------------------------------------
+  THEMES.synth = { pixel: false, ecg: 300, draw(t, dt) {
+    const P = { pink: '#ff2d95', cyan: '#22e6ff', purple: '#1a0533', lav: '#b39ddb', white: '#ffffff', sun1: '#ffe066', sun2: '#ff2d95' };
+    const tone = p => p >= 85 ? '#ff4d4d' : p >= 60 ? '#ffb347' : P.cyan;
+    const F = '"Futura", "Avenir Next", "Helvetica Neue", sans-serif', HZ = 172;
+    const sky = ctx.createLinearGradient(0, 0, 0, HZ); sky.addColorStop(0, '#0d0221'); sky.addColorStop(.7, '#3b0a5e'); sky.addColorStop(1, '#7a1f6e');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, HZ);
+    for (let i = 0; i < 70; i++) { const sx = (i * 137.5) % W, sy = (i * 71.3) % (HZ - 40); ctx.globalAlpha = .3 + .5 * Math.abs(Math.sin(t / 900 + i)); ctx.fillStyle = '#fff'; ctx.fillRect(sx, sy, 1.5, 1.5); }
+    ctx.globalAlpha = 1;
+    const sx = W - 120, sr = 62;
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, HZ); ctx.clip();
+    const sg = ctx.createLinearGradient(0, HZ - sr, 0, HZ + 10); sg.addColorStop(0, P.sun1); sg.addColorStop(1, P.sun2);
+    ctx.fillStyle = sg; ctx.shadowColor = P.pink; ctx.shadowBlur = 30; ctx.beginPath(); ctx.arc(sx, HZ, sr, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = '#5a1560'; for (let i = 0; i < 6; i++) { const yy = HZ - 30 + i * 6 + (t / 60 % 6); ctx.fillRect(sx - sr, yy, sr * 2, 1 + i * .5); }
+    ctx.restore();
+    const b = buckets(Math.floor(W / 5));
+    b.forEach((v, i) => { if (v < 0) return; const bh = 8 + v * .55; ctx.fillStyle = '#12061f'; ctx.fillRect(i * 5, HZ - bh, 5, bh); ctx.fillStyle = tone(v); ctx.fillRect(i * 5, HZ - bh, 4, 2); });
+    ctx.fillStyle = '#0b0416'; ctx.fillRect(0, HZ, W, H - HZ);
+    ctx.strokeStyle = P.pink; ctx.lineWidth = 1; ctx.shadowColor = P.pink; ctx.shadowBlur = 6; ctx.beginPath();
+    for (let i = -8; i <= 8; i++) { ctx.moveTo(W / 2 + i * 14, HZ); ctx.lineTo(W / 2 + i * 110, H + 40); }
+    const scroll = (t / 1400) % 1;
+    for (let k = 0; k < 9; k++) { const p = (k + scroll) / 9, yy = HZ + Math.pow(p, 2) * (H - HZ + 60); if (yy > H) continue; ctx.moveTo(0, yy); ctx.lineTo(W, yy); }
+    ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = P.cyan; ctx.lineWidth = 2; ctx.shadowColor = P.cyan; ctx.shadowBlur = 10; ctx.beginPath(); ctx.moveTo(0, HZ + .5); ctx.lineTo(W, HZ + .5); ctx.stroke(); ctx.shadowBlur = 0;
+
+    const hg = ctx.createLinearGradient(16, 0, 200, 0); hg.addColorStop(0, P.cyan); hg.addColorStop(1, P.pink);
+    txt('PULSE LIMITS', 16, 32, 'italic 800 22px ' + F, hg, 'left', 2);
+    if (D.plan) txt(D.plan, W - 16, 24, '600 11px ' + F, P.lav, 'right', 2);
+    const [st, kind] = statusInfo(t);
+    txt(st, W - 16, 38, '600 11px ' + F, { ok: P.cyan, stale: '#ffb347', dead: '#ff4d4d', old: P.lav }[kind], 'right', 1);
+    const col = !alive ? P.lav : D.status ? '#ffb347' : tone(sessionPct);
+    ECG.draw(16, 108, 42, { color: col, width: 2.5, fade: false, glow: 12, dotGlow: 14 });
+    const lab = activityLabel();
+    if (lab !== null) txt(lab, 16, 54, '600 11px ' + F, busy() ? P.cyan : P.lav, 'left', 1.5);
+
+    const big = alive ? sessionPct + '%' : '--', bf = 'italic 900 56px ' + F;
+    const cg = ctx.createLinearGradient(0, 196, 0, 250); cg.addColorStop(0, '#ffffff'); cg.addColorStop(.5, P.cyan); cg.addColorStop(.52, P.pink); cg.addColorStop(1, '#ff8ac8');
+    ctx.shadowColor = P.pink; ctx.shadowBlur = 18; txt(big, 16, 246, bf, cg); ctx.shadowBlur = 0;
+    txt(alive ? 'SESSION · ' + resetText(session) : 'NO SIGNAL', 18, 266, '600 11px ' + F, alive ? P.white : '#ff4d4d', 'left', 2);
+    others.slice(0, 3).forEach((wd, i) => {
+      const cx = W - 200 + i * 78, cy = 232, pct = Math.round(wd.pct);
+      ctx.fillStyle = 'rgba(11,4,22,.7)'; ctx.beginPath(); ctx.arc(cx, cy, 30, 0, Math.PI * 2); ctx.fill();
+      ring(cx, cy, 24, pct, { track: '#2a0d3d', color: i % 2 ? P.cyan : P.pink, width: 4, cap: 'round', glow: 8 });
+      txt(pct + '%', cx, cy + 5, '700 13px ' + F, P.white, 'center');
+      txt(wd.label, cx, cy - 36, '600 9px ' + F, P.lav, 'center', 2);
+      txt(span(resetMs(wd)), cx, cy + 44, '600 9px ' + F, P.lav, 'center', 1);
+    });
+    txt(alive ? 'UPDATED ' + short(ageSec()) + ' AGO · NEXT RESET ' + nextReset() : (D.hint || ''), 16, H - 8, '500 9px ' + F, 'rgba(255,255,255,.55)', 'left', 1);
+  }};
+
+  // ---- 6. ANALOG: VU meters and a chart recorder ---------------------------------------------
+  THEMES.analog = { pixel: false, ecg: 448, needle: 0, needles: [0, 0, 0], draw(t, dt) {
+    const P = { case: '#1b1917', cream: '#efe6cf', cream2: '#e4d9bd', ink: '#1c1a17', red: '#c8322b', dim: '#8a8069', brass: '#c9a227', blue: '#9db4c6' };
+    const F = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+    ctx.fillStyle = P.case; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,.03)'; ctx.lineWidth = 1; ctx.beginPath(); for (let y = 0; y < H; y += 3) { ctx.moveTo(0, y + .5); ctx.lineTo(W, y + .5); } ctx.stroke();
+    const dial = (x, y, w, h) => { ctx.fillStyle = P.cream; rr(x, y, w, h, 8); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.stroke(); };
+    const gauge = (cx, cy, R, val, label, sub, big, idx) => {
+      const a0 = -Math.PI * .75, a1 = -Math.PI * .25;
+      const ang = v => a0 + (a1 - a0) * v / 100;
+      ctx.strokeStyle = P.red; ctx.lineWidth = big ? 7 : 4; ctx.beginPath(); ctx.arc(cx, cy, R - 4, ang(85), ang(100)); ctx.stroke();
+      ctx.strokeStyle = P.ink; ctx.lineWidth = 1;
+      for (let v = 0; v <= 100; v += big ? 2 : 10) {
+        const a = ang(v), major = v % (big ? 10 : 50) === 0, len = major ? (big ? 12 : 8) : 5;
+        ctx.lineWidth = major ? 1.5 : 1; ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * (R - 2), cy + Math.sin(a) * (R - 2)); ctx.lineTo(cx + Math.cos(a) * (R - 2 - len), cy + Math.sin(a) * (R - 2 - len)); ctx.stroke();
+        if (major && big) txt(String(v), cx + Math.cos(a) * (R - 24), cy + Math.sin(a) * (R - 24) + 4, '500 11px ' + F, P.ink, 'center');
+      }
+      if (big) { txt(label, cx, cy - R * .35, '700 11px ' + F, P.ink, 'center', 3); if (sub) txt(sub, cx, cy - R * .35 + 13, '400 9px ' + F, P.dim, 'center', 1); }
+      else txt(label, cx, cy + 22, '700 8px ' + F, P.ink, 'center', 2);
+      this.needles[idx] += (val - this.needles[idx]) * Math.min(1, dt * 3);
+      const a = ang(this.needles[idx]);
+      ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = big ? 3 : 2; ctx.beginPath(); ctx.moveTo(cx + 2, cy + 3); ctx.lineTo(cx + Math.cos(a) * (R - 10) + 2, cy + Math.sin(a) * (R - 10) + 3); ctx.stroke();
+      ctx.strokeStyle = P.ink; ctx.lineWidth = big ? 2.5 : 1.5; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * (R - 10), cy + Math.sin(a) * (R - 10)); ctx.stroke();
+      ctx.fillStyle = P.ink; ctx.beginPath(); ctx.arc(cx, cy, big ? 6 : 4, 0, Math.PI * 2); ctx.fill();
+    };
+    dial(14, 12, 300, 172);
+    const [st, kind] = statusInfo(t);
+    txt(st, 300, 30, '600 10px ' + F, kind === 'ok' ? P.red : kind === 'old' ? P.dim : P.red, 'right', 1);
+    gauge(164, 160, 130, alive ? sessionPct : 0, 'SESSION', alive ? resetText(session) : 'NO SIGNAL', true, 0);
+    ctx.fillStyle = '#1c1a17'; rr(26, 24, 58, 26, 3); ctx.fill();               // the little digital window, like a dB readout
+    txt(alive ? sessionPct + '%' : '--', 55, 43, '600 16px ui-monospace, Menlo, monospace', '#e8d9a0', 'center');
+    dial(326, 12, 160, 172);
+    others.slice(0, 2).forEach((wd, i) => { const cy = 52 + i * 86; gauge(406, cy + 8, 46, Math.round(wd.pct), wd.label, null, false, 1 + i); txt(Math.round(wd.pct) + '%  ·  ' + span(resetMs(wd)), 406, cy + 44, '500 9px ' + F, P.dim, 'center'); });
+    const sx = 14, sy = 196, sw = 472, sh = 92;
+    ctx.fillStyle = P.cream2; rr(sx, sy, sw, sh, 6); ctx.fill();
+    ctx.strokeStyle = 'rgba(200,50,43,.25)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = sx + 8; x < sx + sw; x += 8) { ctx.moveTo(x + .5, sy + 4); ctx.lineTo(x + .5, sy + sh - 4); }
+    for (let y = sy + 8; y < sy + sh; y += 8) { ctx.moveTo(sx + 4, y + .5); ctx.lineTo(sx + sw - 4, y + .5); } ctx.stroke();
+    ECG.draw(sx + 12, sy + 58, 30, { color: P.ink, width: 1.4, fade: false, dot: false, gap: 24 });
+    ctx.fillStyle = P.red; ctx.beginPath(); ctx.moveTo(sx + 12 + ECG.head, sy + 4); ctx.lineTo(sx + 12 + ECG.head - 4, sy - 2); ctx.lineTo(sx + 12 + ECG.head + 4, sy - 2); ctx.closePath(); ctx.fill();
+    const lab = activityLabel();
+    txt('ACTIVITY' + (lab ? '  ·  ' + lab : ''), sx + 12, sy + 16, '700 9px ' + F, busy() ? P.red : P.dim, 'left', 2);
+    txt(alive ? 'UPDATED ' + short(ageSec()) + ' AGO  ·  NEXT RESET ' + nextReset() : (D.hint || ''), sx + sw - 12, sy + sh - 8, '500 8px ' + F, P.dim, 'right', 1);
+    if (D.plan) txt(D.plan, sx + sw - 12, sy + 16, '700 9px ' + F, P.brass, 'right', 2);
+  }};
+
+  // =========================================================================
+  // run
+  // =========================================================================
+  const theme = THEMES[THEME] || THEMES.crt;
+  document.body.className = THEME in THEMES ? THEME : 'crt';
+  cv.classList.toggle('pixel', !!theme.pixel);
+  ECG.init(theme.ecg);
+  let last = 0;
+  function frame(t) {
+    const dt = last ? Math.min(.1, (t - last) / 1000) : 0; last = t;
+    ctx.imageSmoothingEnabled = !theme.pixel;
+    ECG.step(dt, bpmNow());
+    theme.draw(t, dt);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
