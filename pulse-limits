@@ -104,7 +104,8 @@ case "${1:-help}" in
                     limits: [.limits[]? | {kind, percent, model: .scope.model.display_name}]}' "$CACHE_DIR/usage.json" 2>/dev/null || echo 'not JSON')"
     else bad "no reply cached yet"; fi
     echo "activity"; ok "$("$LIB/bin/pulse-popover" --activity 2>&1 || echo 'helper failed')" ;;
-  raw)     jq . "$CACHE_DIR/usage.json" ;;
+  raw)     if [[ -f "$CACHE_DIR/usage.json" ]]; then jq . "$CACHE_DIR/usage.json"
+           else echo "no reply cached yet: the plugin has never had a successful answer. Run: pulse-limits doctor" >&2; exit 1; fi ;;
   version) sed -n 's/^# <swiftbar.version>\(.*\)<\/swiftbar.version>$/\1/p' "$LIB/$PLUGIN" ;;
   update)
     before=$("$0" version)
