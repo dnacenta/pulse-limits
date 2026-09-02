@@ -151,3 +151,8 @@ Force a live call: Option-click the header of the right-click menu, or run
       "file://$PWD/panel.html?theme=synth#$(printf '%s' '{"plan":"MAX 20X","source":"LIVE","status":"","hint":"","fetched":0,"history":[],"windows":[{"label":"SESSION","pct":63,"resets":null}],"credits":null,"activity":{"tok_per_min":1200,"idle_s":2,"sessions":1}}' | base64)" out.png
 
 `attic/claude64.5m.sh` is the earlier Commodore 64 text-only version.
+
+## License
+
+GNU Affero General Public License v3.0 or later. Copyright (C) 2026 Daniel Nacenta.
+See `LICENSE`.
