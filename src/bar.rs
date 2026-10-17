@@ -254,10 +254,11 @@ const MODULE_NAME: &str = "custom/pulse-limits";
 const CSS_START: &str = "/* pulse-limits: written by `pulse-limits bar on`, removed by `pulse-limits bar off` */";
 const CSS_END: &str = "/* /pulse-limits */";
 const CSS_RULES: &str = "#custom-pulse-limits { min-width: 12px; margin: 0 7.5px; }
-#custom-pulse-limits.warn  { color: #ffb000; }
-#custom-pulse-limits.crit  { color: #ff5c5c; }
-#custom-pulse-limits.stale { color: #ffb000; }
-#custom-pulse-limits.dead  { color: #8c8c8c; }";
+#custom-pulse-limits.ok    { color: #8fb58f; }
+#custom-pulse-limits.warn  { color: #c9a554; }
+#custom-pulse-limits.crit  { color: #bb7744; }
+#custom-pulse-limits.stale { color: #c9a554; }
+#custom-pulse-limits.dead  { color: #8c8c78; }";
 
 /// The tone rules between their markers, as appended to style.css.
 fn css_block() -> String {
@@ -486,10 +487,15 @@ fn unwire_config(text: &str, entry: &str) -> Option<String> {
     found.then_some(out)
 }
 
-/// style.css with the tone block on the end, after one blank line. None: already there.
+/// style.css with the tone block on the end, after one blank line, or an earlier release's block
+/// swapped for this one where it stands. None: this block is already there, or a start marker
+/// without its end (left for a human).
 fn wire_css(text: &str) -> Option<String> {
-    if text.contains(CSS_START) {
-        return None;
+    if let Some(start) = text.find(CSS_START) {
+        let end = text[start..].find(CSS_END)? + start + CSS_END.len();
+        let block = css_block();
+        let block = block.trim_end();
+        return (&text[start..end] != block).then(|| format!("{}{block}{}", &text[..start], &text[end..]));
     }
     let mut out = text.to_string();
     if !out.is_empty() && !out.ends_with('\n') {
@@ -1347,6 +1353,11 @@ mod tests {
         assert_eq!(wire_css("a{}"), Some(format!("a{{}}\n\n{}", css_block())));
         assert_eq!(wire_css("a{}\n\n\n"), Some(format!("a{{}}\n\n\n{}", css_block())));
         assert_eq!(wire_css(&css_block()), None);
+        // an earlier release's tones are swapped for these where they stand; the rest stays
+        let old = format!("{CSS_START}\n#custom-pulse-limits.warn  {{ color: #ffb000; }}\n{CSS_END}\n");
+        assert_eq!(wire_css(&format!("a{{}}\n\n{old}b{{}}\n")), Some(format!("a{{}}\n\n{}b{{}}\n", css_block())));
+        assert_eq!(wire_css(&format!("a{{}}\n\n{}", css_block())), None, "current: nothing to do");
+        assert_eq!(wire_css(&format!("a{{}}\n{CSS_START}\n")), None, "no end marker: left for a human");
         assert_eq!(unwire_css(&css_block()).as_deref(), Some(""));
         assert_eq!(unwire_css(&format!("a{{}}\n\n{}b{{}}\n", css_block())).as_deref(), Some("a{}\nb{}\n"));
         assert_eq!(unwire_css(&format!("a{{}}\n{}", css_block().trim_end())).as_deref(), Some("a{}\n"));
