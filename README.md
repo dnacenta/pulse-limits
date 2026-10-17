@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" width="720" alt="PULSE LIMITS">
+  <img src="docs/banner.svg" width="720" alt="pulse-limits: your Claude, Codex and Grok plan limits, as a living monitor">
 </p>
 
 <p align="center">
@@ -14,15 +14,7 @@
 
 <p align="center">
   Your AI plan limits, Grok, Claude and Codex, in your status bar and in your terminal,
-  as a retro patient monitor.
-</p>
-
-<p align="center">
-  <img src="docs/crt.png" width="640" alt="PulseLimits: a phosphor-green patient monitor showing a heartbeat, the session percentage, week and model rings, and a 12-hour trend">
-</p>
-
-<p align="center">
-  <img src="docs/menubar.png" width="140" alt="Bar item: 16% and a ring">
+  as a living monitor: the heart rate is your usage.
 </p>
 
 One Rust binary, `pulse-limits`. It reuses the logins your CLIs already keep on the
@@ -55,7 +47,7 @@ programs.pulse-limits.enable = true;                            # home.nix
 ```
 
 That adds the package, the Waybar entry and its colours. Optional, inside
-`programs.pulse-limits`: `providers = [ "grok" "claude" ];` and `theme = "synth";`. If your
+`programs.pulse-limits`: `providers = [ "grok" "claude" ];` and `theme = "ember";`. If your
 `programs.waybar.style` is a path, make it text: `builtins.readFile ./style.css`.
 
 ### macOS
@@ -79,28 +71,30 @@ monitor and the TUI show all of them.
 
 ## The monitor
 
-- **The session number**, big, with its reset countdown. Green, amber from 60 %, red from 85 %.
+- **The session number**, big, with its reset countdown. It warms as the window fills and
+  turns rust near the limit.
+- **The heartbeat** is your usage: its rate follows tokens per minute, and it goes flat when idle.
 - **The other windows** as rings, **a 12-hour trend** of the session window, and honest
   failure states: `NO SIGNAL` with the reason when there is no reading.
-- **Five themes**: `crt`, `modern`, `cyber`, `synth`, `analog`, from the provider menu or
-  `pulse-limits theme NAME`.
+- **Every connected provider** at once: one lane each for Claude, Codex and Grok.
+- **Three themes**: `orbit` (the default), `ember` and `herbarium` (light), from the
+  provider menu or `pulse-limits theme NAME`. The old theme names still work and move you
+  to the closest new one.
 
-| CRT | Modern | Synth |
-|:---:|:---:|:---:|
-| <img src="docs/crt.png" width="280" alt="CRT theme"> | <img src="docs/modern.png" width="280" alt="Modern theme"> | <img src="docs/synth.png" width="280" alt="Synth theme"> |
-
-| Cyber | Analog | |
-|:---:|:---:|:---:|
-| <img src="docs/cyber.png" width="280" alt="Cyber theme"> | <img src="docs/analog.png" width="280" alt="Analog theme"> | |
+| | One provider | Claude, Codex and Grok |
+|:---|:---:|:---:|
+| **Orbit** | <img src="docs/orbit.png" width="400" alt="Orbit theme with one provider: the session as an orbit whose moss arc fills with usage, a gold heartbeat, week and model orbits, and a 12-hour dial"> | <img src="docs/orbit-all.png" width="400" alt="Orbit theme with Claude, Codex and Grok connected: one orbit lane per provider"> |
+| **Ember** | <img src="docs/ember.png" width="400" alt="Ember theme with one provider: usage as heat on warm brown, a gold heartbeat with a glowing rust dot, rings and a 12-hour trend of coals"> | <img src="docs/ember-all.png" width="400" alt="Ember theme with Claude, Codex and Grok connected: one lane per provider, each warming with its usage"> |
+| **Herbarium** | <img src="docs/herbarium.png" width="400" alt="Herbarium theme with one provider: a light cream specimen sheet with a dark heartbeat, moss and rust rings, and a 12-hour trend"> | <img src="docs/herbarium-all.png" width="400" alt="Herbarium theme with Claude, Codex and Grok connected: one specimen lane per provider"> |
 
 ## TUI
 
 ```sh
 pulse-limits tui                 # or: pulse-limits grok | claude | codex
-pulse-limits tui --theme synth
+pulse-limits tui --theme ember
 ```
 
-The same monitor in a terminal, for a tmux pane or a tiling-WM tile: braille ECG, block
+The same monitor in a terminal, for a tmux pane or a tiling-WM tile: braille heartbeat, block
 digits, bars, sparkline. Keys: `q` quit, `t` next theme, `r` reload, `?` help.
 
 ## Commands
@@ -109,7 +103,7 @@ digits, bars, sparkline. Keys: `q` quit, `t` next theme, `r` reload, `?` help.
 pulse-limits install / uninstall   set up or remove the bar item
 pulse-limits bar on|off|status     the bar item alone
 pulse-limits provider NAME         enable or disable grok | claude | codex
-pulse-limits theme NAME            crt | modern | cyber | synth | analog
+pulse-limits theme NAME            orbit | ember | herbarium
 pulse-limits tui [NAME]            the monitor in the terminal
 pulse-limits open                  show or hide the monitor
 pulse-limits status                the current reading as JSON, every provider
