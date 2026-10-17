@@ -56,8 +56,6 @@ That adds the package, the Waybar entry and its colours. Optional, inside
 brew install dnacenta/tap/pulse-limits && pulse-limits install
 ```
 
-Coming from the old `pulse-null/tap`? Run `brew untap pulse-null/tap` first.
-
 ## Providers
 
 There is no default. `install` enables the CLIs that have a login on the machine; toggle
