@@ -10,7 +10,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 
-pub const THEMES: [&str; 5] = ["crt", "modern", "cyber", "synth", "analog"];
+/// The monitor themes; the first is the default.
+pub const THEMES: [&str; 3] = ["orbit", "ember", "herbarium"];
+
+/// The themes before 0.7.0, and the one each became.
+pub const LEGACY_THEMES: [(&str, &str); 5] = [("crt", "orbit"), ("cyber", "orbit"), ("modern", "orbit"), ("synth", "ember"), ("analog", "ember")];
+
+/// A theme name as it is spelled now: itself when current, its successor when retired, None
+/// when it never was one.
+pub fn canonical_theme(name: &str) -> Option<&'static str> {
+    THEMES.iter().find(|t| **t == name).copied().or_else(|| LEGACY_THEMES.iter().find(|(old, _)| *old == name).map(|(_, new)| *new))
+}
 
 pub fn now() -> i64 {
     now_f() as i64
@@ -493,6 +503,20 @@ pub mod testing {
 mod tests {
     use super::testing::{calls, fake_bin, pretend, Vars};
     use super::*;
+
+    #[test]
+    fn canonical_theme_maps_retired_names() {
+        for t in THEMES {
+            assert_eq!(canonical_theme(t), Some(t), "a current theme is itself");
+        }
+        for (old, new) in [("crt", "orbit"), ("cyber", "orbit"), ("modern", "orbit"), ("synth", "ember"), ("analog", "ember")] {
+            assert_eq!(canonical_theme(old), Some(new));
+        }
+        for bad in ["", "neon", "ORBIT", " orbit"] {
+            assert_eq!(canonical_theme(bad), None, "{bad:?}");
+        }
+        assert_eq!(THEMES[0], "orbit", "orbit is the default");
+    }
     use crate::providers::testing::{Scratch, ENV};
     use std::os::unix::fs::PermissionsExt;
 
@@ -774,9 +798,9 @@ mod tests {
         assert_eq!(fs::read_link(&hm).unwrap(), Path::new("/nix/store/abc-home-manager-files/.config/pulse-limits/providers"));
         let other = s.0.join("theme");
         std::os::unix::fs::symlink(bin.join("t"), &other).unwrap();
-        write_atomic(&other, b"synth\n").unwrap();
+        write_atomic(&other, b"ember\n").unwrap();
         assert!(fs::symlink_metadata(&other).unwrap().is_file(), "the link became the file");
-        assert_eq!(fs::read_to_string(&other).unwrap(), "synth\n");
+        assert_eq!(fs::read_to_string(&other).unwrap(), "ember\n");
         assert_eq!(fs::read_to_string(bin.join("t")).unwrap(), " a b \n\n", "the old target is untouched");
     }
 }
