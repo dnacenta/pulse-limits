@@ -1,8 +1,8 @@
 class PulseLimits < Formula
   desc "Claude, Codex and Grok plan limits as a living monitor (SwiftBar)"
   homepage "https://github.com/pulse-null/pulse-limits"
-  url "https://github.com/pulse-null/pulse-limits/archive/refs/tags/v0.6.0.tar.gz"
-  sha256 "a8f9deb64ffecea2c9fffccc2f6ec7e4e11fdf33349a8324499778ac5a9a0b2f"
+  url "https://github.com/pulse-null/pulse-limits/archive/refs/tags/v0.7.0.tar.gz"
+  sha256 "5fd678d51bdc878dcc013a78f442c0435b24d3c0f5097935672b7fa17408144a"
   license "AGPL-3.0-or-later"
 
   depends_on "rust" => :build
