@@ -9,7 +9,7 @@ refresh, a request to any other host, a spawned vendor CLI.
 
 Privately, never as a public issue. Either way reaches only the maintainer:
 
-1. On GitHub: open <https://github.com/pulse-null/pulse-limits/security/advisories/new>.
+1. On GitHub: open <https://github.com/dnacenta/pulse-limits/security/advisories/new>.
    That is the "Report a vulnerability" button on the repository's **Security and quality**
    tab (top row, beside Pull requests), under **Advisories** in its left sidebar.
 2. By email: <security@pulse-null.com>, if you cannot use GitHub or prefer not to.
