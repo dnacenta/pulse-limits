@@ -10,12 +10,16 @@ use crate::payload::Built;
 use crate::providers::KNOWN;
 use crate::util::{bar, countdown, epoch_of, is_executable, now, qualified, round_half_up, tone, upper, Tone, THEMES};
 
-// "light,dark" pairs for the text menu
-pub const C_HEAD: &str = "#1c5f8a,#8fd3ff";
-pub const C_GREEN: &str = "#1E7F2A,#5FD75F";
-pub const C_AMBER: &str = "#A85E00,#FFB000";
-pub const C_RED: &str = "#B71C1C,#FF5C5C";
-pub const C_DIM: &str = "#707070,#8C8C8C";
+// "light,dark" pairs for the text menu and the ring: the Miasma tones, moss, gold and rust,
+// each dark enough on a light menu bar and light enough on a dark one
+pub const C_HEAD: &str = "#6e5416,#d7c483";
+pub const C_GREEN: &str = "#3f6b3f,#8fb58f";
+pub const C_AMBER: &str = "#8a6d2a,#c9a554";
+pub const C_RED: &str = "#8a4f2c,#bb7744";
+pub const C_DIM: &str = "#6b6b5c,#8c8c78";
+// the ring's empty track on a light and on a dark menu bar
+const TRACK_LIGHT: &str = "#cbc19a";
+const TRACK_DARK: &str = "#3d3d34";
 pub const MONO: &str = "font=Menlo size=12 trim=false";
 pub const POPOVER_W: i64 = 520;
 pub const POPOVER_H: i64 = 316; // our own popover: 300 of screen + bezel. SwiftBar's fallback adds its 32 px header
@@ -69,7 +73,7 @@ pub fn render(b: &Built, lib: &Path) -> String {
         // one PNG per menu bar appearance: text and arc in the tone colour, a neutral track
         let (light, dark) = tcolor.split_once(',').unwrap_or((tcolor, tcolor));
         if let (Some((w, h, l)), Some((_, _, d))) =
-            (menubar_image(&menubar, ring, &label, light, "#c9ced2"), menubar_image(&menubar, ring, &label, dark, "#3a4044"))
+            (menubar_image(&menubar, ring, &label, light, TRACK_LIGHT), menubar_image(&menubar, ring, &label, dark, TRACK_DARK))
         {
             title = String::new();
             img = format!("image={l},{d} width={w} height={h}");
@@ -184,47 +188,45 @@ mod tests {
             doc("claude", "", "", vec![("SESSION", json!(13)), ("WEEK", json!(9.4))]),
             doc("codex", "NO LOGIN", "NO CODEX LOGIN ON THIS MAC. RUN: codex login", vec![]),
         ];
-        let b = assemble(docs, vec!["claude".into(), "codex".into()], "claude", "crt", Value::Null);
+        let b = assemble(docs, vec!["claude".into(), "codex".into()], "claude", "orbit", Value::Null);
         let text = render(&b, &lib);
         let bin = lib.join("bin/pulse-limits").display().to_string();
         let expected = format!(
-            "● 13% | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F  webview=true webvieww=520 webviewh=348 href=file://{panel}#{b64}
+            "● 13% | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f  webview=true webvieww=520 webviewh=348 href=file://{panel}#{b64}
 ---
-PULSE LIMITS  ·  CLAUDE  ·  MAX 20X | font=Menlo size=12 trim=false color=#1c5f8a,#8fd3ff
-FORCE REFRESH | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F alternate=true bash={bin} param1=reset terminal=false refresh=true
-THEME  ·  CRT | font=Menlo size=12 trim=false color=#707070,#8C8C8C
---CRT | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F checked=true bash={bin} param1=theme param2=crt terminal=false refresh=true
---MODERN | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F checked=false bash={bin} param1=theme param2=modern terminal=false refresh=true
---CYBER | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F checked=false bash={bin} param1=theme param2=cyber terminal=false refresh=true
---SYNTH | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F checked=false bash={bin} param1=theme param2=synth terminal=false refresh=true
---ANALOG | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F checked=false bash={bin} param1=theme param2=analog terminal=false refresh=true
-PROVIDERS | font=Menlo size=12 trim=false color=#707070,#8C8C8C
---GROK | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F checked=false bash={bin} param1=provider param2=grok terminal=false refresh=true
---CLAUDE | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F checked=true bash={bin} param1=provider param2=claude terminal=false refresh=true
---CODEX | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F checked=true bash={bin} param1=provider param2=codex terminal=false refresh=true
+PULSE LIMITS  ·  CLAUDE  ·  MAX 20X | font=Menlo size=12 trim=false color=#6e5416,#d7c483
+FORCE REFRESH | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f alternate=true bash={bin} param1=reset terminal=false refresh=true
+THEME  ·  ORBIT | font=Menlo size=12 trim=false color=#6b6b5c,#8c8c78
+--ORBIT | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f checked=true bash={bin} param1=theme param2=orbit terminal=false refresh=true
+--EMBER | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f checked=false bash={bin} param1=theme param2=ember terminal=false refresh=true
+--HERBARIUM | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f checked=false bash={bin} param1=theme param2=herbarium terminal=false refresh=true
+PROVIDERS | font=Menlo size=12 trim=false color=#6b6b5c,#8c8c78
+--GROK | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f checked=false bash={bin} param1=provider param2=grok terminal=false refresh=true
+--CLAUDE | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f checked=true bash={bin} param1=provider param2=claude terminal=false refresh=true
+--CODEX | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f checked=true bash={bin} param1=provider param2=codex terminal=false refresh=true
 ---
-CLAUDE  ·  MAX 20X | font=Menlo size=12 trim=false color=#1c5f8a,#8fd3ff
-CLAUDE SESSION ███░░░░░░░░░░░░░░░░░  13%   RESETS IN ? | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F
-CLAUDE 7D      ██░░░░░░░░░░░░░░░░░░   9%   RESETS IN ? | font=Menlo size=12 trim=false color=#1E7F2A,#5FD75F
+CLAUDE  ·  MAX 20X | font=Menlo size=12 trim=false color=#6e5416,#d7c483
+CLAUDE SESSION ███░░░░░░░░░░░░░░░░░  13%   RESETS IN ? | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f
+CLAUDE 7D      ██░░░░░░░░░░░░░░░░░░   9%   RESETS IN ? | font=Menlo size=12 trim=false color=#3f6b3f,#8fb58f
 ---
-CODEX | font=Menlo size=12 trim=false color=#1c5f8a,#8fd3ff
-NO LOGIN | font=Menlo size=12 trim=false color=#B71C1C,#FF5C5C
-NO CODEX LOGIN ON THIS MAC. RUN: codex login | font=Menlo size=12 trim=false color=#707070,#8C8C8C
+CODEX | font=Menlo size=12 trim=false color=#6e5416,#d7c483
+NO LOGIN | font=Menlo size=12 trim=false color=#8a4f2c,#bb7744
+NO CODEX LOGIN ON THIS MAC. RUN: codex login | font=Menlo size=12 trim=false color=#6b6b5c,#8c8c78
 ",
             panel = lib.join("panel.html").display(),
             b64 = b.b64
         );
         assert_eq!(text, expected);
         // an error on the active provider: the label gets a "!" and turns red; no provider: "--"
-        let b = assemble(vec![doc("claude", "TOKEN EXPIRED", "x", vec![("SESSION", json!(90))])], vec!["claude".into()], "claude", "synth", Value::Null);
+        let b = assemble(vec![doc("claude", "TOKEN EXPIRED", "x", vec![("SESSION", json!(90))])], vec!["claude".into()], "claude", "ember", Value::Null);
         let text = render(&b, &lib);
-        assert!(text.starts_with("● 90%! | font=Menlo size=12 trim=false color=#B71C1C,#FF5C5C  webview"));
+        assert!(text.starts_with("● 90%! | font=Menlo size=12 trim=false color=#8a4f2c,#bb7744  webview"));
         assert!(text.contains("\nPULSE LIMITS  ·  MAX 20X | "));
         assert!(text.contains("\nTOKEN EXPIRED | "));
-        let b = assemble(vec![], vec![], "", "crt", Value::Null);
+        let b = assemble(vec![], vec![], "", "orbit", Value::Null);
         let text = render(&b, &lib);
-        assert!(text.starts_with("● -- | font=Menlo size=12 trim=false color=#B71C1C,#FF5C5C  webview"));
-        assert!(text.contains("\nNO PROVIDER SELECTED | font=Menlo size=12 trim=false color=#B71C1C,#FF5C5C\n"));
+        assert!(text.starts_with("● -- | font=Menlo size=12 trim=false color=#8a4f2c,#bb7744  webview"));
+        assert!(text.contains("\nNO PROVIDER SELECTED | font=Menlo size=12 trim=false color=#8a4f2c,#bb7744\n"));
         std::env::remove_var("CLAUDE_PROJECTS_DIR");
     }
 
@@ -238,36 +240,36 @@ NO CODEX LOGIN ON THIS MAC. RUN: codex login | font=Menlo size=12 trim=false col
         std::fs::create_dir_all(lib.join("bin")).unwrap();
         std::fs::write(lib.join("panel.html"), "x").unwrap();
         let bin = lib.join("bin").join("pulse-limits").display().to_string();
-        let b = assemble(vec![doc("claude", "", "", vec![("SESSION", json!(70))])], vec!["claude".into()], "claude", "crt", Value::Null);
+        let b = assemble(vec![doc("claude", "", "", vec![("SESSION", json!(70))])], vec!["claude".into()], "claude", "orbit", Value::Null);
         // the helpers built: one PNG per appearance in the amber tone, and the click runs `open`
         let menubar = fake_bin(&lib.join("bin"), "pulse-menubar", "printf '22 18 QUJD\\n'");
         fake_bin(&lib.join("bin"), "pulse-popover", "");
         let text = render(&b, &lib);
         assert!(
             text.starts_with(&format!(
-                " | font=Menlo size=12 trim=false color=#A85E00,#FFB000 image=QUJD,QUJD width=22 height=18 bash={bin} param1=open terminal=false\n---\n"
+                " | font=Menlo size=12 trim=false color=#8a6d2a,#c9a554 image=QUJD,QUJD width=22 height=18 bash={bin} param1=open terminal=false\n---\n"
             )),
             "{text}"
         );
-        assert_eq!(calls(&menubar), vec!["70 70% #A85E00 #A85E00 #c9ced2", "70 70% #FFB000 #FFB000 #3a4044"]);
-        assert!(text.contains("\nSESSION  ██████████████░░░░░░  70%   RESETS IN ? | font=Menlo size=12 trim=false color=#A85E00,#FFB000\n"));
+        assert_eq!(calls(&menubar), vec!["70 70% #8a6d2a #8a6d2a #cbc19a", "70 70% #c9a554 #c9a554 #3d3d34"]);
+        assert!(text.contains("\nSESSION  ██████████████░░░░░░  70%   RESETS IN ? | font=Menlo size=12 trim=false color=#8a6d2a,#c9a554\n"));
         // a helper that fails, or prints too little: the text title stays
         fake_bin(&lib.join("bin"), "pulse-menubar", "exit 1");
-        assert!(render(&b, &lib).starts_with("● 70% | font=Menlo size=12 trim=false color=#A85E00,#FFB000  bash="));
+        assert!(render(&b, &lib).starts_with("● 70% | font=Menlo size=12 trim=false color=#8a6d2a,#c9a554  bash="));
         fake_bin(&lib.join("bin"), "pulse-menubar", "printf '22 18\\n'");
         assert!(render(&b, &lib).starts_with("● 70% | "));
         // nothing enabled but a document with an error: its status and hint under the menu; no name in the header
-        let b = assemble(vec![doc("codex", "NO LOGIN", "RUN: codex login", vec![])], vec![], "codex", "crt", Value::Null);
+        let b = assemble(vec![doc("codex", "NO LOGIN", "RUN: codex login", vec![])], vec![], "codex", "orbit", Value::Null);
         let text = render(&b, &lib);
         assert!(text.contains("\nPULSE LIMITS | "));
         assert!(text.contains(
-            "\nNO LOGIN | font=Menlo size=12 trim=false color=#B71C1C,#FF5C5C\nRUN: codex login | font=Menlo size=12 trim=false color=#707070,#8C8C8C\n"
+            "\nNO LOGIN | font=Menlo size=12 trim=false color=#8a4f2c,#bb7744\nRUN: codex login | font=Menlo size=12 trim=false color=#6b6b5c,#8c8c78\n"
         ));
         // an error without a hint in a provider block, in the red tone
-        let b = assemble(vec![doc("grok", "HTTP 500", "", vec![("WEEK", json!(90))])], vec!["grok".into()], "grok", "crt", Value::Null);
+        let b = assemble(vec![doc("grok", "HTTP 500", "", vec![("WEEK", json!(90))])], vec!["grok".into()], "grok", "orbit", Value::Null);
         let text = render(&b, &lib);
         assert!(text.ends_with(
-            "---\nGROK | font=Menlo size=12 trim=false color=#1c5f8a,#8fd3ff\nHTTP 500 | font=Menlo size=12 trim=false color=#B71C1C,#FF5C5C\nWEEK     ██████████████████░░  90%   RESETS IN ? | font=Menlo size=12 trim=false color=#B71C1C,#FF5C5C\n"
+            "---\nGROK | font=Menlo size=12 trim=false color=#6e5416,#d7c483\nHTTP 500 | font=Menlo size=12 trim=false color=#8a4f2c,#bb7744\nWEEK     ██████████████████░░  90%   RESETS IN ? | font=Menlo size=12 trim=false color=#8a4f2c,#bb7744\n"
         ), "{text}");
     }
 }

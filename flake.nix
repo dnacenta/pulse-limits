@@ -1,5 +1,5 @@
 {
-  description = "PulseLimits: your Claude, Codex and Grok plan limits as a retro patient monitor. One Rust binary; on Linux a Waybar module and a command.";
+  description = "PulseLimits: your Claude, Codex and Grok plan limits as a living monitor. One Rust binary; on Linux a Waybar module and a command.";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -35,7 +35,7 @@
           '';
           doCheck = false; # the unit tests bind local sockets; run `cargo test` in a checkout
           meta = with pkgs.lib; {
-            description = "Claude, Codex and Grok plan limits as a retro patient monitor: a Waybar module, a terminal UI and a command";
+            description = "Claude, Codex and Grok plan limits as a living monitor: a Waybar module, a terminal UI and a command";
             homepage = "https://github.com/pulse-null/pulse-limits";
             license = licenses.agpl3Plus;
             mainProgram = "pulse-limits";
@@ -72,11 +72,20 @@
             };
             style = ''
               #custom-pulse-limits { min-width: 12px; margin: 0 7.5px; }
-              #custom-pulse-limits.warn  { color: #ffb000; }
-              #custom-pulse-limits.crit  { color: #ff5c5c; }
-              #custom-pulse-limits.stale { color: #ffb000; }
-              #custom-pulse-limits.dead  { color: #8c8c8c; }
+              #custom-pulse-limits.ok    { color: #8fb58f; }
+              #custom-pulse-limits.warn  { color: #c9a554; }
+              #custom-pulse-limits.crit  { color: #bb7744; }
+              #custom-pulse-limits.stale { color: #c9a554; }
+              #custom-pulse-limits.dead  { color: #8c8c78; }
             '';
+            # The themes before 0.7.0 and the one each became (LEGACY_THEMES in src/util.rs); still
+            # accepted, with a warning, until 0.8.
+            legacyThemes = { crt = "orbit"; cyber = "orbit"; modern = "orbit"; synth = "ember"; analog = "ember"; };
+            theme =
+              if cfg.theme != null && legacyThemes ? ${cfg.theme} then
+                lib.warn "programs.pulse-limits.theme: \"${cfg.theme}\" is now \"${legacyThemes.${cfg.theme}}\"; the old names go in 0.8" legacyThemes.${cfg.theme}
+              else
+                cfg.theme;
           in {
             options.programs.pulse-limits = {
               enable = mkEnableOption "PulseLimits, the plan-limits ring in the bar";
@@ -94,13 +103,14 @@
                 '';
               };
               theme = mkOption {
-                type = types.nullOr (types.enum [ "crt" "modern" "cyber" "synth" "analog" ]); # THEMES in src/util.rs
+                type = types.nullOr (types.enum ([ "orbit" "ember" "herbarium" ] ++ builtins.attrNames legacyThemes)); # THEMES in src/util.rs
                 default = null;
-                example = "synth";
+                example = "orbit";
                 description = ''
-                  The monitor theme, written to `~/.config/pulse-limits/theme`. Null leaves it to
-                  `pulse-limits theme NAME` (crt until then); set, a runtime change lasts until
-                  the next switch.
+                  The monitor theme, written to `~/.config/pulse-limits/theme`: orbit, ember or
+                  herbarium (the light one). Null leaves it to `pulse-limits theme NAME` (orbit until
+                  then); set, a runtime change lasts until the next switch. The names before 0.7.0
+                  still work for now, with a warning, as the theme each became.
                 '';
               };
               waybar = {
@@ -141,7 +151,7 @@
                 force = true;
               };
               xdg.configFile."pulse-limits/theme" = mkIf (cfg.theme != null) {
-                text = cfg.theme + "\n";
+                text = theme + "\n";
                 force = true;
               };
               programs.waybar = mkIf cfg.waybar.enable {

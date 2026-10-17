@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use crate::activity;
 use crate::estimate;
 use crate::providers::{self, Doc};
-use crate::util::{base64_encode, cache_dir, config_dir, lib_dir, process_running, read_trimmed, round_half_up, write_atomic, THEMES};
+use crate::util::{base64_encode, cache_dir, canonical_theme, config_dir, lib_dir, process_running, read_trimmed, round_half_up, write_atomic, THEMES};
 
 pub const BAR_INTERVAL: i64 = 270; // the bar runs every minute; each API sees one call per 5
 pub const PANEL_INTERVAL: i64 = 45; // the popover and the TUI ask every 2 min while open
@@ -40,16 +40,18 @@ impl Built {
     }
 }
 
-/// The chosen theme; default crt.
+/// The chosen theme, a retired name read as its successor; default orbit.
 pub fn theme() -> String {
-    read_trimmed(&config_dir().join("theme")).filter(|t| THEMES.contains(&t.as_str())).unwrap_or_else(|| "crt".into())
+    read_trimmed(&config_dir().join("theme")).and_then(|t| canonical_theme(&t)).unwrap_or(THEMES[0]).to_string()
 }
 
-pub fn set_theme(name: &str) -> Result<(), String> {
-    if !THEMES.contains(&name) {
+/// Writes the theme, a retired name as its successor; returns the name written.
+pub fn set_theme(name: &str) -> Result<&'static str, String> {
+    let Some(theme) = canonical_theme(name) else {
         return Err(format!("unknown theme: {name} (one of: {})", THEMES.join(" ")));
-    }
-    write_atomic(&config_dir().join("theme"), format!("{name}\n").as_bytes()).map_err(|e| e.to_string())
+    };
+    write_atomic(&config_dir().join("theme"), format!("{theme}\n").as_bytes()).map_err(|e| e.to_string())?;
+    Ok(theme)
 }
 
 /// The bar shows one provider: the first enabled one whose CLI runs right now, else the first.
@@ -152,7 +154,7 @@ mod tests {
         let s = Scratch::new("payload");
         std::env::set_var("CLAUDE_PROJECTS_DIR", s.0.join("none"));
         let docs = vec![doc("claude", vec![("SESSION", json!(13)), ("WEEK", json!(17))]), doc("codex", vec![("SESSION", json!(17.0))])];
-        let b = assemble(docs, vec!["claude".into(), "codex".into()], "claude", "crt", json!({"tok_per_min": 0, "idle_s": 5, "sessions": 0}));
+        let b = assemble(docs, vec!["claude".into(), "codex".into()], "claude", "orbit", json!({"tok_per_min": 0, "idle_s": 5, "sessions": 0}));
         let keys: Vec<&str> = b.payload.as_object().unwrap().keys().map(String::as_str).collect();
         assert_eq!(
             keys,
@@ -173,15 +175,15 @@ mod tests {
         assert!(!b.b64.contains('\n'));
         assert_eq!(serde_json::from_slice::<Value>(&crate::util::base64_decode(&b.b64).unwrap()).unwrap(), b.payload);
         // codex active: no estimate key at all
-        let b = assemble(vec![doc("codex", vec![("SESSION", json!(64.5))])], vec!["codex".into()], "codex", "synth", Value::Null);
+        let b = assemble(vec![doc("codex", vec![("SESSION", json!(64.5))])], vec!["codex".into()], "codex", "ember", Value::Null);
         assert!(b.payload.get("estimate").is_none());
         assert_eq!((b.s_pct, b.str("provider").as_str()), (65, "codex"));
         // a provider with no SESSION window (a weekly pool only): its first window is the bar's number
-        let b = assemble(vec![doc("grok", vec![("WEEK", json!(37.5))])], vec!["grok".into()], "grok", "crt", Value::Null);
+        let b = assemble(vec![doc("grok", vec![("WEEK", json!(37.5))])], vec!["grok".into()], "grok", "orbit", Value::Null);
         assert_eq!((b.have_data, b.s_pct, b.s_api), (true, 38, 37.5));
         assert!(b.payload.get("estimate").is_none());
         // nothing enabled
-        let b = assemble(vec![], vec![], "", "crt", Value::Null);
+        let b = assemble(vec![], vec![], "", "orbit", Value::Null);
         assert_eq!((b.str("status").as_str(), b.have_data, b.s_pct), ("NO PROVIDER SELECTED", false, 0));
         assert_eq!(b.payload["providers"].as_array().unwrap().len(), 0);
         std::env::remove_var("CLAUDE_PROJECTS_DIR");
@@ -197,23 +199,23 @@ mod tests {
         let claude = json!({"tok_per_min": 300, "idle_s": 4, "sessions": 1});
         let keyed = json!({"claude": claude.clone(), "codex": null});
         // keyed: the active provider's on top, each one's in its entry, null for one without a source
-        let b = assemble(docs(), enabled(), "claude", "crt", keyed.clone());
+        let b = assemble(docs(), enabled(), "claude", "orbit", keyed.clone());
         assert_eq!(b.payload["activity"], claude);
         assert_eq!(b.payload["providers"][0]["activity"], claude);
         assert!(b.payload["providers"][1]["activity"].is_null());
-        let b = assemble(docs(), enabled(), "codex", "crt", keyed);
+        let b = assemble(docs(), enabled(), "codex", "orbit", keyed);
         assert!(b.payload["activity"].is_null());
         assert_eq!(b.payload["providers"][0]["activity"], claude);
         // a provider the keyed object does not name
-        let b = assemble(docs(), enabled(), "codex", "crt", json!({"claude": claude.clone()}));
+        let b = assemble(docs(), enabled(), "codex", "orbit", json!({"claude": claude.clone()}));
         assert!(b.payload["activity"].is_null());
         assert!(b.payload["providers"][1]["activity"].is_null());
         // flat: the active's, whichever it is; null: nothing anywhere
-        let b = assemble(docs(), enabled(), "codex", "crt", claude.clone());
+        let b = assemble(docs(), enabled(), "codex", "orbit", claude.clone());
         assert_eq!(b.payload["activity"], claude);
         assert!(b.payload["providers"][0]["activity"].is_null());
         assert_eq!(b.payload["providers"][1]["activity"], claude);
-        let b = assemble(docs(), enabled(), "claude", "crt", Value::Null);
+        let b = assemble(docs(), enabled(), "claude", "orbit", Value::Null);
         assert!(b.payload["activity"].is_null());
         assert!(b.payload["providers"][0]["activity"].is_null());
         std::env::remove_var("CLAUDE_PROJECTS_DIR");
@@ -223,11 +225,22 @@ mod tests {
     fn theme_file() {
         let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         let _s = Scratch::new("theme");
-        assert_eq!(theme(), "crt");
-        set_theme("synth").unwrap();
-        assert_eq!(theme(), "synth");
+        assert_eq!(theme(), "orbit", "the default");
+        assert_eq!(set_theme("ember"), Ok("ember"));
+        assert_eq!(theme(), "ember");
         assert!(set_theme("nope").is_err());
-        assert_eq!(std::fs::read_to_string(config_dir().join("theme")).unwrap(), "synth\n");
+        assert_eq!(std::fs::read_to_string(config_dir().join("theme")).unwrap(), "ember\n");
+        // a retired name is written as its successor
+        assert_eq!(set_theme("analog"), Ok("ember"));
+        assert_eq!(set_theme("cyber"), Ok("orbit"));
+        assert_eq!(std::fs::read_to_string(config_dir().join("theme")).unwrap(), "orbit\n");
+        // a file still holding a retired name (written by 0.6) reads as its successor
+        write_atomic(&config_dir().join("theme"), b"synth\n").unwrap();
+        assert_eq!(theme(), "ember");
+        write_atomic(&config_dir().join("theme"), b"modern\n").unwrap();
+        assert_eq!(theme(), "orbit");
+        write_atomic(&config_dir().join("theme"), b"neon\n").unwrap();
+        assert_eq!(theme(), "orbit", "an unknown name falls back to the default");
     }
 
     #[test]
@@ -245,7 +258,7 @@ mod tests {
         // two enabled, none running (pgrep is shimmed): the first is the bar's; both say NO LOGIN without a call
         s.enable("codex grok");
         let b = build(PANEL_INTERVAL, false, None);
-        assert_eq!((b.active.as_str(), b.str("provider").as_str(), b.str("status").as_str(), b.theme.as_str()), ("codex", "codex", "NO LOGIN", "crt"));
+        assert_eq!((b.active.as_str(), b.str("provider").as_str(), b.str("status").as_str(), b.theme.as_str()), ("codex", "codex", "NO LOGIN", "orbit"));
         assert_eq!(b.payload["providers"].as_array().unwrap().len(), 2);
         assert_eq!(b.payload["providers"][1]["name"], "grok");
         // codex keeps no session logs in this home: no reading on top, none in its entry
@@ -289,7 +302,7 @@ mod tests {
         .unwrap();
         let mut d = doc("claude", vec![("SESSION", json!(13)), ("WEEK", json!(17))]);
         d.fetched = fetched;
-        let b = assemble(vec![d], vec!["claude".into()], "claude", "crt", Value::Null);
+        let b = assemble(vec![d], vec!["claude".into()], "claude", "orbit", Value::Null);
         assert_eq!((b.payload["estimate"]["calibrated"].as_bool(), b.payload["estimate"]["pct_est"].as_f64()), (Some(true), Some(15.8)));
         assert_eq!((b.s_api, b.s_pct), (13.0, 16));
         drop(s);
