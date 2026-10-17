@@ -37,7 +37,7 @@ use serde_json::{Map, Value};
 use crate::activity;
 use crate::payload::{self, PANEL_INTERVAL};
 use crate::providers;
-use crate::util::{base64_decode, cache_dir, canonical_theme, config_dir, epoch_of_f, fmt_k, hhmm, local_offset, mtime_f, now_f, short, span, THEMES};
+use crate::util::{base64_decode, cache_dir, canonical_theme, config_dir, epoch_of_f, fmt_k, mtime_f, now_f, short, span, THEMES};
 
 const PANEL_EVERY: Duration = Duration::from_secs(5); // panel.url: a file read, decoded only when its mtime moved
 const PAYLOAD_EVERY: Duration = Duration::from_secs(120); // the payload is built in process, as the popover runs it; the providers throttle the API
@@ -496,7 +496,6 @@ struct App {
     theme: usize,
     help: bool,
     truecolor: bool,
-    tz: i64,
 }
 
 impl App {
@@ -666,16 +665,6 @@ impl App {
             t.push_str(if wide { " · EST" } else { "·EST" });
         }
         t
-    }
-
-    fn next_reset(&self) -> String {
-        let n = now();
-        let next = self.session.iter().chain(self.others.iter()).filter_map(|w| w.resets).filter(|r| *r > n).fold(f64::INFINITY, f64::min);
-        if next.is_finite() {
-            hhmm(next as i64, self.tz)
-        } else {
-            "?".into()
-        }
     }
 
     fn buckets(&self, n: usize) -> Vec<f64> {
@@ -1041,7 +1030,7 @@ fn render(f: &mut Frame, app: &App, l: &Layout, t: f64) {
         text!(y, m, w - 2 * m, Line::styled("-12H", dim), Alignment::Left);
         text!(y, m, w - 2 * m, Line::styled("NOW", dim), Alignment::Right);
     }
-    // footer: freshness, credits, keys
+    // footer: a problem or the no-reading hint (empty while readings come in), credits, keys
     let status = app.status();
     let (left, left_style) = if !status.is_empty() && app.alive {
         (
@@ -1049,7 +1038,7 @@ fn render(f: &mut Frame, app: &App, l: &Layout, t: f64) {
             Style::new().fg(app.color(if (t * 2.0) as i64 % 2 == 1 { p.bad } else { p.warn })),
         )
     } else if app.alive {
-        (format!("UPDATED {} AGO · NEXT RESET {}", short(app.age() as i64), app.next_reset()), dim)
+        (String::new(), dim)
     } else {
         (app.str("hint"), dim)
     };
@@ -1253,7 +1242,6 @@ impl App {
             theme,
             help: false,
             truecolor: matches!(std::env::var("COLORTERM").as_deref(), Ok("truecolor") | Ok("24bit")),
-            tz: local_offset(),
         };
         app.d.insert("status".into(), Value::String("NO DATA".into()));
         app
@@ -1310,10 +1298,9 @@ mod tests {
         }
     }
 
-    /// The screen with that payload folded in, UTC, truecolor.
+    /// The screen with that payload folded in, truecolor.
     fn app(payload: Value, activity: Option<Value>, provider: Option<&str>) -> App {
         let mut a = App::new(feed(Some(payload), activity, provider), 0);
-        a.tz = 0;
         a.truecolor = true;
         assert!(a.apply());
         a
@@ -1405,8 +1392,7 @@ mod tests {
         assert!(axis.trim_start().starts_with("-12H") && axis.trim_end().ends_with("NOW"), "{axis}");
         let baseline = &rows[(l.spark_y + l.spark_h - 1) as usize];
         assert!(baseline.contains('·') && baseline.chars().any(|c| "▁▂▃▄▅▆▇█".contains(c)), "{baseline}");
-        assert!(rows[27].starts_with("  UPDATED 3") && rows[27].contains("S AGO · NEXT RESET "), "{}", rows[27]);
-        assert!(rows[27].trim_end().ends_with("CREDITS 1.50 EUR") && !rows[27].contains("q quit"), "no room for the keys next to the credits: {}", rows[27]);
+        assert!(rows[27].trim() == "CREDITS 1.50 EUR   q quit  t theme  r reload  ? help", "nothing on the left while readings come in: {}", rows[27]);
         let rows = draw(&mut a, 100, 28, 1001.0);
         assert!(rows[27].trim_end().ends_with("CREDITS 1.50 EUR   q quit  t theme  r reload  ? help"), "{}", rows[27]);
         // an even second: the dot is off
@@ -1420,7 +1406,7 @@ mod tests {
         assert!(rows[0].starts_with(" PULSE LIMITS"), "{}", rows[0]);
         assert!(rows[l.bar_y as usize].trim_end().ends_with("RESET 2H 14M · EST"), "{}", rows[l.bar_y as usize]);
         assert!(text.contains("SESSION") && text.contains(" 17%  RESET 4D 07H"), "{text}");
-        assert!(rows[17].contains("CREDITS 1.50 EUR") && !rows[17].contains("q quit"), "no room for the keys at 60 columns: {}", rows[17]);
+        assert!(rows[17].trim() == "CREDITS 1.50 EUR   q quit  t theme  r reload  ? help", "{}", rows[17]);
         // 40x12: narrow, two windows, the session count and the keys dropped
         let l = layout(&mut a, 40, 12);
         assert_eq!((l.wide, l.n_win, l.reset.as_str(), l.rule_y, l.axis_y), (false, 2, "2H 14M·EST", None, None));
@@ -1429,7 +1415,7 @@ mod tests {
         assert!(text.contains("● 3.4K TOK/MIN") && !text.contains("SESSIONS"), "{text}");
         assert!(text.contains(" 17%  4D 07H"), "{text}");
         assert!(!text.contains("SCOPED") && !text.contains("q quit"), "{text}");
-        assert!(rows[11].starts_with(" UPDATED 3"), "{}", rows[11]);
+        assert!(rows[11].trim() == "CREDITS 1.50 EUR", "{}", rows[11]);
         // 30x10: the smallest screen that still draws; 20x5: TOO SMALL
         let rows = draw(&mut a, 30, 10, 1001.0);
         assert!(rows[0].starts_with(" PULSE LIMITS"), "{}", rows[0]);
@@ -1509,7 +1495,7 @@ mod tests {
         assert!(rows[0].trim_end().ends_with("MAX 20X") && !rows[0].contains("LIVE") && !rows[0].contains("CLAUDE ·"), "{}", rows[0]);
         let text = rows.join("\n");
         assert!(text.contains("● IDLE 12M"), "{text}");
-        assert!(rows[27].starts_with("  UPDATED 10M AGO · NEXT RESET ") && !text.contains("CREDITS"), "{}", rows[27]);
+        assert!(rows[27].trim() == "q quit  t theme  r reload  ? help" && !text.contains("CREDITS"), "{}", rows[27]);
         assert!(text.contains("RESET 2H 14M\n") || rows.iter().any(|r| r.trim_end().ends_with("RESET 2H 14M")), "no EST marker: {text}");
         // t cycles the three themes (ANSI and truecolor), ? opens the help, r pokes the feed, q and ctrl-c quit
         for (i, name) in THEMES.iter().enumerate().skip(1).chain(std::iter::once((0, &THEMES[0]))) {
@@ -1559,7 +1545,6 @@ mod tests {
             "windows": [], "credits": null, "providers": [{"name": "claude"}]});
         let mut a = app(p, None, None);
         assert!(!a.alive && a.session.is_none() && a.bpm() == 0.0 && !a.fresh());
-        assert_eq!(a.next_reset(), "?");
         assert_eq!(a.status_info(1.0), ("? NO LOGIN".to_string(), "bad"));
         let l = layout(&mut a, 60, 18);
         assert_eq!((l.big.as_str(), l.reset.as_str(), l.n_win), ("--", "", 0));

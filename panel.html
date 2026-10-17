@@ -125,10 +125,6 @@
   const planBadge = () => (D.providers || []).length > 1 && D.provider ? D.provider.toUpperCase() + (D.plan ? ' · ' + D.plan : '') : D.plan;
   const ageSec = () => Math.max(0, Math.floor(Date.now() / 1000 - D.fetched));
   const fresh = () => alive && !D.status && ageSec() < 120;
-  function nextReset() {
-    const now = Date.now(), ts = D.windows.map(w => Date.parse(w.resets)).filter(v => v > now);
-    return ts.length ? hhmm(Math.min(...ts)) : '?';
-  }
   const bpmOf = a => a.tok > 0 ? Math.min(180, 60 + 60 * Math.log10(1 + a.tok / 100)) : 0;   // nothing streaming: flat line
   function bpmNow() {
     if (!alive) return 0;
@@ -308,19 +304,9 @@
   }
   // a lane's headline window in a word: Session, Week (qualified windows carry their word: SESSION or 7D)
   const laneWord = h => { const w = h.win; if (!w) return 'Session'; const u = w.prov ? (w.word === '7D' ? 'WEEK' : w.word) : w.label; return niceWord(u); };
-  // the soonest reset across every provider on the monitor (one provider: its own)
-  function nextResetAll() {
-    const now = Date.now(), ws = [].concat(...(D.providers || []).map(p => p.windows || []), D.windows);
-    const ts = ws.map(w => Date.parse(w.resets)).filter(v => v > now);
-    return ts.length ? hhmm(Math.min(...ts)) : '?';
-  }
-  const reporting = () => (D.providers || []).filter(p => (p.windows || []).length).length;
+  // the bottom line stays empty while readings come in: it carries only the no-reading hint and extra-usage credits
   function footer(color, t) {
-    const n = (D.providers || []).length;
-    let s = alive ? 'Updated ' + short(ageSec()).toLowerCase() + ' ago · next reset ' + (lanes.length ? nextResetAll() : nextReset())
-                  : sentence(D.hint) || 'No reading yet';
-    if (alive && lanes.length) s += ' · ' + reporting() + ' of ' + n + ' reporting';
-    txt(s, 14, H - 8, f(500, 9), color);
+    if (!alive) txt(sentence(D.hint) || 'No reading yet', 14, H - 8, f(500, 9), color);
     if (D.credits) {
       const l = D.credits.label ? sentence(D.credits.label) : 'Credits';
       txt(l + ' ' + Number(D.credits.used).toFixed(2) + (D.credits.currency ? ' ' + D.credits.currency : ''), W - 14, H - 8, f(600, 9), color, 'right');
@@ -496,8 +482,8 @@
 
     // the heartbeat, across the bottom
     const lab = actText(act);
-    if (lab !== null) { dot(15, 233, 2.3, OP.rust); txt(lab, 22, 236, f(500, 9.5), OP.sand); }
-    emberTrace(ECG, 12, 262, 22, { line: OP.gold, dot: OP.rust, dim: OP.line2, idle: !alive || (act.tok !== null && !busy()) }, t);
+    if (lab !== null) { dot(15, 241, 2.3, OP.rust); txt(lab, 22, 244, f(500, 9.5), OP.sand); }
+    emberTrace(ECG, 12, 270, 22, { line: OP.gold, dot: OP.rust, dim: OP.line2, idle: !alive || (act.tok !== null && !busy()) }, t);
     footer(OP.sub, t);
   }};
   function orbitLanes(t) {
@@ -582,24 +568,24 @@
     const nr = Math.min(others.length, 4), small = nr > 2, cw = small ? 74 : 96;
     others.slice(0, nr).forEach((w, i) => {
       const cx0 = 10 + i * (cw + 8), pct = Math.round(w.pct);
-      card(cx0, 156, cw, 106, 12, EP.card);
+      card(cx0, 156, cw, 124, 12, EP.card);
       txt(nice(w.label), cx0 + 10, 174, fitFont([nice(w.label)], [f(500, 10), f(500, 8.5), f(500, 7.5)], cw - 16), EP.body);
       if (small) {
-        gauge(cx0 + cw / 2, 212, 16, w, pct, EP, w.status ? EP.muted : etone(pct), f(700, 10));
-        txt(w.status ? sentence(w.status) : later(w), cx0 + cw / 2, 248, f(500, 8.5), w.status ? EP.bad : EP.body, 'center');
+        gauge(cx0 + cw / 2, 221, 16, w, pct, EP, w.status ? EP.muted : etone(pct), f(700, 10));
+        txt(w.status ? sentence(w.status) : later(w), cx0 + cw / 2, 257, f(500, 8.5), w.status ? EP.bad : EP.body, 'center');
       } else {
-        gauge(cx0 + 30, 218, 18, w, pct, EP, w.status ? EP.muted : etone(pct), f(700, 11));
-        if (w.status) txt(sentence(w.status), cx0 + cw / 2, 252, f(500, 8), EP.bad, 'center');
-        else { txt(later(w), cx0 + 54, 215, f(500, 9), EP.body); txt('reset', cx0 + 54, 227, f(500, 9), EP.body); }
+        gauge(cx0 + 30, 227, 18, w, pct, EP, w.status ? EP.muted : etone(pct), f(700, 11));
+        if (w.status) txt(sentence(w.status), cx0 + cw / 2, 261, f(500, 8), EP.bad, 'center');
+        else { txt(later(w), cx0 + 54, 224, f(500, 9), EP.body); txt('reset', cx0 + 54, 236, f(500, 9), EP.body); }
       }
     });
     const tx = 10 + nr * (cw + 8), tw0 = 490 - tx;
-    card(tx, 156, tw0, 106, 12, EP.card);
+    card(tx, 156, tw0, 124, 12, EP.card);
     txt('Session · 12h', tx + 12, 174, f(500, 10), EP.body);
-    const hot = bars(tx + 12, 242, tw0 - 24, 54, 4, 2, ecoal, EP.track, 1.5);
-    hot.filter(b => b.v >= 60).forEach(b => { ctx.shadowColor = 'rgba(187,119,68,.6)'; ctx.shadowBlur = 5 + 6 * wave(t + b.x * 40, 3); ctx.fillStyle = b.c; rr(b.x, b.top, 4, 242 - b.top, 1.5); ctx.fill(); ctx.shadowBlur = 0; });
+    const hot = bars(tx + 12, 260, tw0 - 24, 66, 4, 2, ecoal, EP.track, 1.5);
+    hot.filter(b => b.v >= 60).forEach(b => { ctx.shadowColor = 'rgba(187,119,68,.6)'; ctx.shadowBlur = 5 + 6 * wave(t + b.x * 40, 3); ctx.fillStyle = b.c; rr(b.x, b.top, 4, 260 - b.top, 1.5); ctx.fill(); ctx.shadowBlur = 0; });
     embers(hot, t);
-    txt('−12h', tx + 12, 255, m(400, 7.5), EP.body); txt('now', tx + tw0 - 12, 255, m(400, 7.5), EP.body, 'right');
+    txt('−12h', tx + 12, 273, m(400, 7.5), EP.body); txt('now', tx + tw0 - 12, 273, m(400, 7.5), EP.body, 'right');
     footer(EP.muted, t);
   }};
   function emberLanes(t) {
@@ -661,23 +647,23 @@
     const nr = Math.min(others.length, 4), small = nr > 2, cw = small ? 76 : 110;
     others.slice(0, nr).forEach((w, i) => {
       const cx0 = 10 + i * (cw + 7), pct = Math.round(w.pct), c = w.status ? HP.sub : pct >= 60 ? htone(pct) : i % 2 ? HP.rust : HP.moss;
-      sheet(cx0, 166, cw, 98, 11);
+      sheet(cx0, 166, cw, 114, 11);
       txt(nice(w.label).toUpperCase(), cx0 + 11, 182, m(500, small ? 6.5 : 7.5), HP.sub, 'left', 1.1);
-      if (small) { gauge(cx0 + cw / 2, 216, 16, w, pct, HP, c, f(800, 10)); txt(w.status ? sentence(w.status) : later(w), cx0 + cw / 2, 251, f(600, 8.5), w.status ? HP.bad : HP.ink, 'center'); }
+      if (small) { gauge(cx0 + cw / 2, 224, 16, w, pct, HP, c, f(800, 10)); txt(w.status ? sentence(w.status) : later(w), cx0 + cw / 2, 259, f(600, 8.5), w.status ? HP.bad : HP.ink, 'center'); }
       else {
-        gauge(cx0 + 31, 220, 18, w, pct, HP, c, f(800, 11));
-        if (w.status) txt(sentence(w.status), cx0 + cw / 2, 254, f(600, 8), HP.bad, 'center');
-        else { txt(later(w), cx0 + 58, 217, f(700, 10), HP.ink); txt('reset', cx0 + 58, 229, f(400, 9), HP.body); }
+        gauge(cx0 + 31, 228, 18, w, pct, HP, c, f(800, 11));
+        if (w.status) txt(sentence(w.status), cx0 + cw / 2, 262, f(600, 8), HP.bad, 'center');
+        else { txt(later(w), cx0 + 58, 225, f(700, 10), HP.ink); txt('reset', cx0 + 58, 237, f(400, 9), HP.body); }
       }
     });
     const tx = 10 + nr * (cw + 7), tw0 = 490 - tx;
-    sheet(tx, 166, tw0, 98, 11);
+    sheet(tx, 166, tw0, 114, 11);
     txt('SESSION · 12H', tx + 12, 182, m(500, 7.5), HP.sub, 'left', 1.4);
     const rise = .93 + .07 * wave(t, 3);
-    bars(tx + 12, 246, tw0 - 24, 54, 4, 2, v => v >= 60 ? HP.rust : HP.olive, HP.border, 1.5)
-      .filter(b => b.v >= 60).forEach(b => { ctx.fillStyle = HP.card; rr(b.x - .5, b.top - 1, 5, (246 - b.top) * (1 - rise) + 1, 1.5); ctx.fill(); });
-    ctx.fillStyle = HP.border; ctx.fillRect(tx + 12, 246, tw0 - 24, 1);
-    txt('−12h', tx + 12, 257, m(400, 7), HP.sub); txt('now', tx + tw0 - 12, 257, m(400, 7), HP.sub, 'right');
+    bars(tx + 12, 262, tw0 - 24, 66, 4, 2, v => v >= 60 ? HP.rust : HP.olive, HP.border, 1.5)
+      .filter(b => b.v >= 60).forEach(b => { ctx.fillStyle = HP.card; rr(b.x - .5, b.top - 1, 5, (262 - b.top) * (1 - rise) + 1, 1.5); ctx.fill(); });
+    ctx.fillStyle = HP.border; ctx.fillRect(tx + 12, 262, tw0 - 24, 1);
+    txt('−12h', tx + 12, 273, m(400, 7), HP.sub); txt('now', tx + tw0 - 12, 273, m(400, 7), HP.sub, 'right');
     footer(HP.body, t);
   }};
   function herbLanes(t) {
