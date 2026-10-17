@@ -1212,7 +1212,10 @@ mod tests {
         assert_eq!((d.status.as_str(), d.source.as_str(), d.plan.as_str(), d.windows.len()), ("", "CACHE", "X PREMIUM+", 1));
         // a due call within the hour asks billing only: the plan file keeps its label
         std::fs::remove_file(s.cache().join("usage-grok.json")).unwrap();
-        env.base(&serve_routes(2, vec![("/billing?format=credits", 200, ZERO), ("/settings", 200, "{\"subscription_tier_display\":\"Changed\"}")]));
+        // the synthetic zero-usage reply, its period still open: the captured one ended 2026-09-14,
+        // and a reply with no percent outside its period rightly reads as NO LIMITS IN REPLY
+        let zero_open: &'static str = ZERO.replace("2026-09-14T17:30:18.071364+00:00", "2099-01-08T00:00:00+00:00").leak();
+        env.base(&serve_routes(2, vec![("/billing?format=credits", 200, zero_open), ("/settings", 200, "{\"subscription_tier_display\":\"Changed\"}")]));
         let d = run(270);
         assert_eq!((d.status.as_str(), d.source.as_str(), d.plan.as_str()), ("", "LIVE", "X PREMIUM+"));
         assert_eq!(std::fs::read_to_string(s.cache().join("plan-grok")).unwrap(), "X PREMIUM+\n");
