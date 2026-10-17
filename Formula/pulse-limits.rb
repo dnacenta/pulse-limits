@@ -2,7 +2,7 @@ class PulseLimits < Formula
   desc "Claude, Codex and Grok plan limits as a living monitor (SwiftBar)"
   homepage "https://github.com/dnacenta/pulse-limits"
   url "https://github.com/dnacenta/pulse-limits/archive/refs/tags/v0.7.1.tar.gz"
-  sha256 "15721fb447298a6dd6884582871e139e7b122659085d550e4fe83c7cd6af5b00"
+  sha256 "574e9eb6828e09251d4a0802297c9a30bd6fed9d40a82bd601c232f70ab1ce61"
   license "AGPL-3.0-or-later"
 
   depends_on "rust" => :build
