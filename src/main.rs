@@ -1,4 +1,4 @@
-//! pulse-limits: your Claude and Codex plan limits as a retro patient monitor. One binary:
+//! pulse-limits: your Claude, Codex and Grok plan limits as a living monitor. One binary:
 //! the SwiftBar plugin body (`swiftbar`), the Waybar module (`waybar`), the document the panel
 //! and the popover read (`payload`), the transcript accounting (`activity`, `estimate`), the
 //! terminal monitor (`tui`) and the install/doctor commands. See `pulse-limits help`.
@@ -27,12 +27,12 @@ use util::{cache_dir, config_dir, is_macos, write_atomic};
 
 const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 
-const HELP: &str = "pulse-limits: your Claude and Codex plan limits as a retro patient monitor.
+const HELP: &str = "pulse-limits: your Claude, Codex and Grok plan limits as a living monitor.
 
   pulse-limits install       set up the bar item (SwiftBar on macOS, Waybar on Linux) and start it
   pulse-limits uninstall     remove the bar item, drop cache and settings
   pulse-limits bar on|off|status  the bar item alone: link it, unlink it, or say whether it is
-  pulse-limits theme NAME    crt | modern | cyber | synth | analog
+  pulse-limits theme NAME    orbit | ember | herbarium
   pulse-limits provider NAME enable or disable a provider: grok | claude | codex
   pulse-limits refresh       force a live fetch now
   pulse-limits open          show or hide the monitor
@@ -49,6 +49,15 @@ const HELP: &str = "pulse-limits: your Claude and Codex plan limits as a retro p
   pulse-limits activity [NAME]  what a CLI is doing now, from its session logs, as JSON (default claude)
   pulse-limits estimate PCT FETCHED  the dead-reckoned session % from a reading, as JSON
   pulse-limits reset         drop the cached readings so the next run asks live";
+
+/// What `theme NAME` prints: the theme, or how a retired name was taken.
+fn theme_line(asked: &str, theme: &str) -> String {
+    if asked == theme {
+        format!("theme: {theme}")
+    } else {
+        format!("theme: {asked} is now {theme}")
+    }
+}
 
 fn main() {
     let lib = util::lib_dir(); // from the invoked path and the PATH we were started with, before it is pinned
@@ -79,9 +88,9 @@ fn dispatch(lib: &Path, args: &[String]) -> i32 {
         "uninstall" => bar::uninstall(lib),
         "bar" => bar::bar(lib, arg),
         "theme" => match payload::set_theme(arg.map(String::as_str).unwrap_or("")) {
-            Ok(()) => {
+            Ok(theme) => {
                 bar::refresh();
-                println!("theme: {}", arg.unwrap());
+                println!("{}", theme_line(arg.map(String::as_str).unwrap_or(theme), theme));
                 0
             }
             Err(e) => {
@@ -256,8 +265,15 @@ mod tests {
         }
         assert_eq!(run(&s, &["frobnicate"]), 64);
         // theme: written, then the bar is poked (open/pkill are stand-ins in the sandbox)
+        assert_eq!(run(&s, &["theme", "ember"]), 0);
+        assert_eq!(payload::theme(), "ember");
+        // a retired name is taken as its successor
         assert_eq!(run(&s, &["theme", "synth"]), 0);
-        assert_eq!(payload::theme(), "synth");
+        assert_eq!(payload::theme(), "ember");
+        assert_eq!(run(&s, &["theme", "crt"]), 0);
+        assert_eq!(payload::theme(), "orbit");
+        assert_eq!(theme_line("crt", "orbit"), "theme: crt is now orbit");
+        assert_eq!(theme_line("herbarium", "herbarium"), "theme: herbarium");
         assert_eq!(run(&s, &["theme", "neon"]), 64);
         assert_eq!(run(&s, &["theme"]), 64);
         // provider

@@ -124,7 +124,7 @@ mod tests {
             credits: json!({ "used": 1.5, "currency": "EUR" }),
             history: vec![],
         };
-        let b = assemble(vec![d.clone()], vec!["claude".into()], "claude", "crt", json!({ "tok_per_min": 8098, "idle_s": 0, "sessions": 4 }));
+        let b = assemble(vec![d.clone()], vec!["claude".into()], "claude", "orbit", json!({ "tok_per_min": 8098, "idle_s": 0, "sessions": 4 }));
         let v: Value = serde_json::from_str(&render(&b)).unwrap();
         assert_eq!(v["text"], "17%");
         assert_eq!(v["class"], "ok");
@@ -134,14 +134,14 @@ mod tests {
         let mut stale = d.clone();
         stale.status = "TOKEN EXPIRED".into();
         stale.hint = "OPEN CLAUDE CODE ONCE, IT REFRESHES THE TOKEN".into();
-        let b = assemble(vec![stale], vec!["claude".into()], "claude", "crt", json!({ "tok_per_min": 0, "idle_s": 125, "sessions": 0 }));
+        let b = assemble(vec![stale], vec!["claude".into()], "claude", "orbit", json!({ "tok_per_min": 0, "idle_s": 125, "sessions": 0 }));
         let v: Value = serde_json::from_str(&render(&b)).unwrap();
         assert_eq!((v["text"].as_str(), v["class"].as_str()), (Some("17%!"), Some("stale")));
         assert!(v["tooltip"]
             .as_str()
             .unwrap()
             .ends_with("\nIDLE 2M\nUPDATED 1M AGO · CACHE\n? TOKEN EXPIRED\nOPEN CLAUDE CODE ONCE, IT REFRESHES THE TOKEN"));
-        let b = assemble(vec![], vec![], "", "crt", Value::Null);
+        let b = assemble(vec![], vec![], "", "orbit", Value::Null);
         let v: Value = serde_json::from_str(&render(&b)).unwrap();
         assert_eq!((v["text"].as_str(), v["class"].as_str(), v["percentage"].as_i64()), (Some("--"), Some("dead"), Some(0)));
         assert_eq!(v["tooltip"], "PULSE LIMITS\n? NO PROVIDER SELECTED");
@@ -173,7 +173,7 @@ mod tests {
             mk("codex", "PLUS", "TOKEN EXPIRED", vec![("WEEK", 42)]),
             mk("grok", "", "", vec![("WEEK", 90)]),
         ];
-        let b = assemble(docs, vec!["claude".into(), "codex".into()], "claude", "crt", json!({ "tok_per_min": 0, "idle_s": 0, "sessions": 0 }));
+        let b = assemble(docs, vec!["claude".into(), "codex".into()], "claude", "orbit", json!({ "tok_per_min": 0, "idle_s": 0, "sessions": 0 }));
         let v: Value = serde_json::from_str(&render(&b)).unwrap();
         let tip = v["tooltip"].as_str().unwrap();
         assert!(tip.starts_with("PULSE LIMITS  ·  MAX 20X\nCLAUDE SESSION ███░░░░░░░░░░░░░░░░░  17%   RESETS IN ?\nCODEX  ·  PLUS\n? TOKEN EXPIRED\nCODEX 7D       ████████░░░░░░░░░░░░  42%   RESETS IN ?\nIDLE 0S\nUPDATED 1M"), "{tip}");
@@ -182,7 +182,7 @@ mod tests {
             vec![mk("claude", "", "", vec![("SESSION", 17)]), mk("grok", "", "", vec![("WEEK", 90)])],
             vec!["claude".into(), "grok".into()],
             "claude",
-            "crt",
+            "orbit",
             Value::Null,
         );
         let v: Value = serde_json::from_str(&render(&b)).unwrap();
@@ -200,7 +200,7 @@ mod tests {
         )
         .unwrap();
         crate::estimate::save(&crate::estimate::calib_file(), &crate::estimate::Calib { anchor_pct: 17.0, anchor_at: fetched, k: 0.001, samples: 3 });
-        let b = assemble(vec![mk("claude", "MAX 20X", "", vec![("SESSION", 17)])], vec!["claude".into()], "claude", "crt", Value::Null);
+        let b = assemble(vec![mk("claude", "MAX 20X", "", vec![("SESSION", 17)])], vec!["claude".into()], "claude", "orbit", Value::Null);
         assert_eq!((b.s_api, b.s_pct), (17.0, 20)); // 17 + 0.001 * 2750 = 19.75
         let v: Value = serde_json::from_str(&render(&b)).unwrap();
         assert_eq!(v["text"], "20%");

@@ -1,5 +1,5 @@
 class PulseLimits < Formula
-  desc "Claude, Codex and Grok plan limits, as a retro patient monitor (SwiftBar)"
+  desc "Claude, Codex and Grok plan limits as a living monitor (SwiftBar)"
   homepage "https://github.com/pulse-null/pulse-limits"
   url "https://github.com/pulse-null/pulse-limits/archive/refs/tags/v0.6.0.tar.gz"
   sha256 "a8f9deb64ffecea2c9fffccc2f6ec7e4e11fdf33349a8324499778ac5a9a0b2f"

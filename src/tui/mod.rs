@@ -37,7 +37,7 @@ use serde_json::{Map, Value};
 use crate::activity;
 use crate::payload::{self, PANEL_INTERVAL};
 use crate::providers;
-use crate::util::{base64_decode, cache_dir, config_dir, epoch_of_f, fmt_k, hhmm, local_offset, mtime_f, now_f, short, span, THEMES};
+use crate::util::{base64_decode, cache_dir, canonical_theme, config_dir, epoch_of_f, fmt_k, hhmm, local_offset, mtime_f, now_f, short, span, THEMES};
 
 const PANEL_EVERY: Duration = Duration::from_secs(5); // panel.url: a file read, decoded only when its mtime moved
 const PAYLOAD_EVERY: Duration = Duration::from_secs(120); // the payload is built in process, as the popover runs it; the providers throttle the API
@@ -80,9 +80,14 @@ fn age_of(p: &Path) -> Option<Duration> {
     mtime_f(p).map(|m| Duration::from_secs_f64((now() - m).max(0.0)))
 }
 
+/// Where a theme name, a retired one taken as its successor, sits in THEMES.
+fn theme_index(name: &str) -> Option<usize> {
+    canonical_theme(name).and_then(|t| THEMES.iter().position(|n| *n == t))
+}
+
 fn saved_theme() -> usize {
     let t = std::fs::read_to_string(config_dir().join("theme")).unwrap_or_default();
-    THEMES.iter().position(|n| *n == t.trim()).unwrap_or(0)
+    theme_index(t.trim()).unwrap_or(0)
 }
 
 // ---- data: the payload and the activity, off the drawing thread ----------------------------
@@ -258,6 +263,7 @@ struct Trace<'a> {
     rows: usize,
     color: Color,
     truecolor: bool,
+    ground: Option<Color>,
 }
 
 impl Shape for Trace<'_> {
@@ -290,7 +296,7 @@ impl Shape for Trace<'_> {
             } else {
                 0.4
             };
-            let c = faded(self.color, keep, self.truecolor);
+            let c = faded(self.color, keep, self.truecolor, self.ground);
             for yy in lo..=hi {
                 p.paint(i, yy as usize, c);
             }
@@ -311,55 +317,45 @@ struct Palette {
     warn: Role,
     bad: Role,
     accent: Role,
+    /// The ground the theme paints under everything; None keeps the terminal's own.
+    bg: Option<Role>,
 }
 
 fn palette(name: &str) -> Palette {
     use Color::*;
     match name {
-        "modern" => Palette {
-            title: Role(0xf5f5f7, White),
-            text: Role(0xf5f5f7, White),
-            dim: Role(0x98989d, DarkGray),
-            ok: Role(0x30d158, LightGreen),
-            warn: Role(0xffd60a, LightYellow),
-            bad: Role(0xff453a, LightRed),
-            accent: Role(0x0a84ff, LightBlue),
+        // usage as heat: sand, then gold, then rust
+        "ember" => Palette {
+            title: Role(0xe9e2c4, White),
+            text: Role(0xd7c483, LightYellow),
+            dim: Role(0xa69a80, DarkGray),
+            ok: Role(0xd7c483, LightYellow),
+            warn: Role(0xc9a554, Yellow),
+            bad: Role(0xbb7744, Red),
+            accent: Role(0xc9a554, Yellow),
+            bg: None,
         },
-        "cyber" => Palette {
-            title: Role(0x00f0ff, LightCyan),
-            text: Role(0xdbe4ff, White),
-            dim: Role(0x4a5080, Blue),
-            ok: Role(0x00f0ff, LightCyan),
-            warn: Role(0xf9f002, LightYellow),
-            bad: Role(0xff3b5c, LightRed),
-            accent: Role(0xff2bd6, LightMagenta),
+        // the light one: ink on cream, so it paints the cream itself whatever the terminal's ground
+        "herbarium" => Palette {
+            title: Role(0x1a1a1a, Black),
+            text: Role(0x33332c, Black),
+            dim: Role(0x5e5a45, DarkGray),
+            ok: Role(0x2f5a2f, Green),
+            warn: Role(0x7d5e17, Yellow),
+            bad: Role(0x5e260c, Red),
+            accent: Role(0x6e5416, Yellow),
+            bg: Some(Role(0xe9e2c4, White)),
         },
-        "synth" => Palette {
-            title: Role(0xff2d95, LightMagenta),
-            text: Role(0xffffff, White),
-            dim: Role(0xb39ddb, Magenta),
-            ok: Role(0x22e6ff, LightCyan),
-            warn: Role(0xffb347, LightYellow),
-            bad: Role(0xff4d4d, LightRed),
-            accent: Role(0xb39ddb, LightMagenta),
-        },
-        "analog" => Palette {
-            title: Role(0xefe6cf, LightYellow),
-            text: Role(0xefe6cf, LightYellow),
-            dim: Role(0x8a8069, DarkGray),
-            ok: Role(0xc9a227, Yellow),
-            warn: Role(0xff9f1c, LightYellow),
-            bad: Role(0xff5a5a, LightRed),
-            accent: Role(0xc9a227, Yellow),
-        },
+        // orbit, the default: moss, gold and rust on the terminal's dark ground
         _ => Palette {
-            title: Role(0xb9ffcb, LightGreen),
-            text: Role(0xb9ffcb, LightGreen),
-            dim: Role(0x3d8a52, Green),
-            ok: Role(0x5cff8a, LightGreen),
-            warn: Role(0xffb63b, LightYellow),
-            bad: Role(0xff5a5a, LightRed),
-            accent: Role(0x8fd3ff, LightCyan),
+            title: Role(0xe9e2c4, White),
+            text: Role(0xc2c2b0, Gray),
+            dim: Role(0x8c8c78, DarkGray),
+            ok: Role(0x7aa37a, Green),
+            warn: Role(0xc9a554, Yellow),
+            bad: Role(0xbb7744, Red),
+            accent: Role(0xd7c483, LightYellow),
+            bg: None,
         },
     }
 }
@@ -368,10 +364,19 @@ fn rgb(hex: u32) -> Color {
     Color::Rgb((hex >> 16) as u8, (hex >> 8 & 0xff) as u8, (hex & 0xff) as u8)
 }
 
-fn faded(c: Color, keep: f64, truecolor: bool) -> Color {
+/// A colour toward the ground: in truecolor a mix with the theme's painted ground (black when it
+/// paints none), among the 16 colours one step dimmer.
+fn faded(c: Color, keep: f64, truecolor: bool, ground: Option<Color>) -> Color {
     use Color::*;
+    if let (true, Rgb(r, g, b)) = (truecolor, c) {
+        let (gr, gg, gb) = match ground {
+            Some(Rgb(gr, gg, gb)) => (gr, gg, gb),
+            _ => (0, 0, 0),
+        };
+        let mix = |a: u8, z: u8| (a as f64 * keep + z as f64 * (1.0 - keep)) as u8;
+        return Rgb(mix(r, gr), mix(g, gg), mix(b, gb));
+    }
     match c {
-        Rgb(r, g, b) if truecolor => Rgb((r as f64 * keep) as u8, (g as f64 * keep) as u8, (b as f64 * keep) as u8),
         _ if keep >= 0.6 => c,
         LightGreen => Green,
         LightRed => Red,
@@ -695,6 +700,11 @@ impl App {
         }
     }
 
+    /// The ground the theme paints, in this terminal's colours; None keeps the terminal's own.
+    fn ground(&self) -> Option<Color> {
+        palette(THEMES[self.theme]).bg.map(|r| self.color(r))
+    }
+
     fn tone(&self, p: &Palette, pct: f64) -> Color {
         self.color(if pct >= 85.0 {
             p.bad
@@ -847,9 +857,11 @@ fn bold(c: Color) -> Style {
 
 impl Layout {
     /// The braille trace of `ecg` in the trace column, rows [y, y + h).
-    fn trace(&self, f: &mut Frame, area: Rect, ecg: &Ecg, (y, h): (u16, u16), color: Color, truecolor: bool) {
-        let shape = Trace { ecg, rows: h as usize, color, truecolor };
+    fn trace(&self, f: &mut Frame, area: Rect, ecg: &Ecg, (y, h): (u16, u16), color: Color, app: &App) {
+        let ground = app.ground();
+        let shape = Trace { ecg, rows: h as usize, color, truecolor: app.truecolor, ground };
         let canvas = Canvas::default()
+            .background_color(ground.unwrap_or(Color::Reset))
             .marker(Marker::Braille)
             .x_bounds([0.0, (self.trace_w as f64 * 2.0 - 1.0).max(1.0)])
             .y_bounds([0.0, (h as f64 * 4.0 - 1.0).max(1.0)])
@@ -861,6 +873,9 @@ impl Layout {
 fn render(f: &mut Frame, app: &App, l: &Layout, t: f64) {
     let area = f.area();
     let p = palette(THEMES[app.theme]);
+    if let Some(ground) = app.ground() {
+        f.render_widget(Block::new().style(Style::new().bg(ground)), area);
+    }
     let (w, _h) = (area.width, area.height);
     let (m, dim) = (l.m, Style::new().fg(app.color(p.dim)));
     if l.too_small {
@@ -914,7 +929,7 @@ fn render(f: &mut Frame, app: &App, l: &Layout, t: f64) {
             let line = Line::from(vec![Span::styled("● ", dot), Span::styled(lab, Style::new().fg(live))]);
             f.render_widget(Paragraph::new(line), rect(l.trace_x, l.label_y, l.trace_w, 1, area));
         }
-        l.trace(f, area, &app.ecg, (l.body_y, l.body_h), col, app.truecolor);
+        l.trace(f, area, &app.ecg, (l.body_y, l.body_h), col, app);
     }
     // one lane per provider: the dot, its name, its own rate, and its trace, coloured by its own session window
     let right_x = w - m - l.right_w;
@@ -933,7 +948,7 @@ fn render(f: &mut Frame, app: &App, l: &Layout, t: f64) {
         }
         f.render_widget(Paragraph::new(Line::from(spans)), rect(l.trace_x, ly, l.trace_w, 1, area));
         let color = if lane.active { col } else { lane.pct.map(|v| app.tone(&p, v)).unwrap_or(app.color(p.dim)) };
-        l.trace(f, area, &lane.ecg, (by, bh), color, app.truecolor);
+        l.trace(f, area, &lane.ecg, (by, bh), color, app);
         // its headline in the right column, level with the lane: the label on the name row, the percentage on the
         // first trace row (a lane always has one), the reset on the second when the lane has it
         let dead = if lane.active { !app.alive } else { lane.head.is_none() };
@@ -1097,6 +1112,9 @@ fn render_help(f: &mut Frame, app: &App, p: &Palette) {
     let h = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
     let r = Rect::new((area.width - w) / 2, (area.height - h) / 2, w, h);
     f.render_widget(Clear, r);
+    if let Some(ground) = app.ground() {
+        f.render_widget(Block::new().style(Style::new().bg(ground)), r);
+    }
     let text: Vec<Line> = lines
         .iter()
         .enumerate()
@@ -1186,14 +1204,14 @@ fn parse(args: &[String]) -> Result<(Option<String>, Option<usize>), i32> {
                 println!("{}", usage());
                 return Err(0);
             }
-            "--theme" => match args.next().and_then(|n| THEMES.iter().position(|t| t == n)) {
+            "--theme" => match args.next().and_then(|n| theme_index(n)) {
                 Some(i) => theme = Some(i),
                 None => {
                     eprintln!("pulse-limits tui: unknown theme (one of: {})", THEMES.join(" "));
                     return Err(64);
                 }
             },
-            s if s.starts_with("--theme=") => match THEMES.iter().position(|t| *t == &s[8..]) {
+            s if s.starts_with("--theme=") => match theme_index(&s[8..]) {
                 Some(i) => theme = Some(i),
                 None => {
                     eprintln!("pulse-limits tui: unknown theme (one of: {})", THEMES.join(" "));
@@ -1321,7 +1339,7 @@ mod tests {
     fn busy() -> Value {
         let n = now_i();
         json!({
-            "provider": "claude", "plan": "MAX 20X", "source": "LIVE", "theme": "crt", "fetched": n - 30,
+            "provider": "claude", "plan": "MAX 20X", "source": "LIVE", "theme": "orbit", "fetched": n - 30,
             "history": [[n - 3600, 9], [n - 7200, 40], [n - 100, 13], [n - 20 * 3600, 99], ["junk"], [n - 200]],
             "activity": {"tok_per_min": 3400, "idle_s": 2, "sessions": 2},
             "status": "", "hint": "",
@@ -1423,6 +1441,58 @@ mod tests {
     }
 
     #[test]
+    fn palettes_tell_tones_apart_by_lightness_and_herbarium_paints_its_ground() {
+        // relative luminance, as WCAG defines it
+        let lum = |hex: u32| {
+            let lin = |c: u32| {
+                let c = c as f64 / 255.0;
+                if c <= 0.04045 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * lin(hex >> 16) + 0.7152 * lin(hex >> 8 & 0xff) + 0.0722 * lin(hex & 0xff)
+        };
+        assert_eq!(THEMES.len(), 3);
+        for name in THEMES {
+            let p = palette(name);
+            let tones = [p.ok.0, p.warn.0, p.bad.0];
+            for (i, a) in tones.iter().enumerate() {
+                for b in &tones[i + 1..] {
+                    assert!((lum(*a) - lum(*b)).abs() >= 0.04, "{name}: {a:06x} and {b:06x} differ in hue only");
+                }
+            }
+            // every role reads on the ground it is drawn on: the painted one, else a dark terminal
+            let ground = p.bg.map(|r| lum(r.0)).unwrap_or(lum(0x1a1a1a));
+            for role in [p.title, p.text, p.dim, p.ok, p.warn, p.bad, p.accent] {
+                let (hi, lo) = if lum(role.0) > ground { (lum(role.0), ground) } else { (ground, lum(role.0)) };
+                assert!((hi + 0.05) / (lo + 0.05) >= 4.5, "{name}: {:06x} on its ground", role.0);
+            }
+        }
+        assert!(palette("orbit").bg.is_none() && palette("ember").bg.is_none() && palette("herbarium").bg.is_some());
+        // herbarium paints its cream under the text and the trace, in both colour depths; orbit keeps the terminal's
+        for (truecolor, cream) in [(true, Color::Rgb(0xe9, 0xe2, 0xc4)), (false, Color::White)] {
+            let mut a = app(busy(), None, None);
+            a.theme = 2;
+            a.truecolor = truecolor;
+            let mut term = Terminal::new(TestBackend::new(90, 28)).unwrap();
+            frame(&mut term, &mut a, 0.05, 1000.0).unwrap();
+            let buf = term.backend().buffer();
+            for (x, y) in [(0, 0), (45, 4), (89, 27)] {
+                assert_eq!(buf.cell((x, y)).unwrap().bg, cream, "({x}, {y}) truecolor={truecolor}");
+            }
+            a.help = true;
+            frame(&mut term, &mut a, 0.05, 1000.0).unwrap();
+            assert_eq!(term.backend().buffer().cell((45, 14)).unwrap().bg, cream, "under the help");
+        }
+        let mut a = app(busy(), None, None);
+        let mut term = Terminal::new(TestBackend::new(90, 28)).unwrap();
+        frame(&mut term, &mut a, 0.05, 1000.0).unwrap();
+        assert_eq!(term.backend().buffer().cell((45, 4)).unwrap().bg, Color::Reset, "orbit leaves the terminal's ground");
+    }
+
+    #[test]
     fn idle_stale_themes_help_and_keys() {
         let n = now_i();
         let mut p = busy();
@@ -1441,7 +1511,7 @@ mod tests {
         assert!(text.contains("● IDLE 12M"), "{text}");
         assert!(rows[27].starts_with("  UPDATED 10M AGO · NEXT RESET ") && !text.contains("CREDITS"), "{}", rows[27]);
         assert!(text.contains("RESET 2H 14M\n") || rows.iter().any(|r| r.trim_end().ends_with("RESET 2H 14M")), "no EST marker: {text}");
-        // t cycles the five themes (ANSI and truecolor), ? opens the help, r pokes the feed, q and ctrl-c quit
+        // t cycles the three themes (ANSI and truecolor), ? opens the help, r pokes the feed, q and ctrl-c quit
         for (i, name) in THEMES.iter().enumerate().skip(1).chain(std::iter::once((0, &THEMES[0]))) {
             assert!(!key(&mut a, press('t')));
             assert_eq!((a.theme, THEMES[a.theme]), (i, *name));
@@ -1457,7 +1527,7 @@ mod tests {
         assert!(a.help);
         let rows = draw(&mut a, 90, 28, 1000.0);
         let text = rows.join("\n");
-        assert!(text.contains(" PULSE LIMITS ") && text.contains("q   quit") && text.contains("t   next theme (now modern)"), "{text}");
+        assert!(text.contains(" PULSE LIMITS ") && text.contains("q   quit") && text.contains("t   next theme (now ember)"), "{text}");
         assert!(text.contains("r   re-read the payload now") && text.contains("?   close this help"), "{text}");
         assert!(
             text.contains("payload   /nowhere/panel.url every 5s") && text.contains("built in process every 120s (once now if that file is stale)"),
@@ -1484,7 +1554,7 @@ mod tests {
     fn no_login_no_provider_and_a_weekly_pool() {
         let n = now_i();
         let hint = "NO CLAUDE.AI LOGIN FOUND. RUN: pulse-limits doctor";
-        let p = json!({"provider": "claude", "plan": "", "source": "", "theme": "crt", "fetched": 0, "history": [],
+        let p = json!({"provider": "claude", "plan": "", "source": "", "theme": "orbit", "fetched": 0, "history": [],
             "activity": {"tok_per_min": 0, "idle_s": 5, "sessions": 0}, "status": "NO LOGIN", "hint": hint,
             "windows": [], "credits": null, "providers": [{"name": "claude"}]});
         let mut a = app(p, None, None);
@@ -1535,9 +1605,9 @@ mod tests {
             assert!(rows[27].starts_with("  ? TOKEN EXPIRED · LAST GOOD 5M AGO"), "{}", rows[27]);
         }
         // a payload that is not an object changes nothing; a missing activity reading is fine
-        let mut a = App::new(feed(Some(json!([1, 2])), None, None), 4);
+        let mut a = App::new(feed(Some(json!([1, 2])), None, None), 2);
         assert!(a.apply());
-        assert_eq!((a.status().as_str(), a.alive, a.act, a.theme), ("NO DATA", false, None, 4));
+        assert_eq!((a.status().as_str(), a.alive, a.act, a.theme), ("NO DATA", false, None, 2));
         assert_eq!(a.activity_label(), None);
         assert_eq!(a.bpm(), 0.0);
         let mut a = App::new(feed(Some(json!({"windows": [{"label": "SESSION", "pct": 1}], "status": ""})), None, None), 0);
@@ -1774,8 +1844,10 @@ mod tests {
         e.init(20);
         assert_eq!((e.cols.len(), e.head), (20, 0));
         use Color::*;
-        assert_eq!(faded(Rgb(100, 100, 100), 0.5, true), Rgb(50, 50, 50));
-        assert_eq!(faded(LightGreen, 0.7, false), LightGreen);
+        assert_eq!(faded(Rgb(100, 100, 100), 0.5, true, None), Rgb(50, 50, 50));
+        assert_eq!(faded(Rgb(0x1a, 0x1a, 0x1a), 0.5, true, Some(Rgb(0xe9, 0xe2, 0xc4))), Rgb(129, 126, 111), "toward a painted ground");
+        assert_eq!(faded(LightGreen, 0.7, false, None), LightGreen);
+        assert_eq!(faded(Green, 0.4, false, Some(White)), Green, "the 16 colours ignore the ground");
         for (from, to) in [
             (LightGreen, Green),
             (LightRed, Red),
@@ -1787,7 +1859,7 @@ mod tests {
             (Gray, DarkGray),
             (Blue, Blue),
         ] {
-            assert_eq!(faded(from, 0.4, false), to);
+            assert_eq!(faded(from, 0.4, false, None), to);
         }
         assert_eq!(rgb(0x8fd3ff), Rgb(0x8f, 0xd3, 0xff));
         assert_eq!(glyph('x')[2], "###");
@@ -1820,7 +1892,7 @@ mod tests {
         let url = s.scratch.cache().join("panel.url");
         assert!(age_of(&url).is_none());
         // a fresh panel.url a bar wrote: read (once per mtime), and no build of our own
-        let b = payload::assemble(vec![], vec![], "", "crt", json!({"tok_per_min": 0, "idle_s": 1, "sessions": 0}));
+        let b = payload::assemble(vec![], vec![], "", "orbit", json!({"tok_per_min": 0, "idle_s": 1, "sessions": 0}));
         write_atomic(&url, b.panel_url(&s.scratch.0.join("lib")).as_bytes()).unwrap();
         assert!(age_of(&url).unwrap() < Duration::from_secs(5));
         let shared = Arc::new(Mutex::new(Shared::default()));
@@ -1866,26 +1938,34 @@ mod tests {
         assert_eq!(read_panel_url(&url), Some(json!({"windows": []})));
         // the saved theme and the terminal's colour depth
         assert_eq!(saved_theme(), 0);
-        write_atomic(&config_dir().join("theme"), b"cyber\n").unwrap();
+        write_atomic(&config_dir().join("theme"), b"herbarium\n").unwrap();
         assert_eq!(saved_theme(), 2);
-        assert!(!App::new(feed(None, None, None), 3).truecolor);
+        // a theme saved by 0.6 reads as its successor
+        write_atomic(&config_dir().join("theme"), b"synth\n").unwrap();
+        assert_eq!(saved_theme(), 1);
+        write_atomic(&config_dir().join("theme"), b"cyber\n").unwrap();
+        assert_eq!(saved_theme(), 0);
+        assert!(!App::new(feed(None, None, None), 2).truecolor);
         std::env::set_var("COLORTERM", "truecolor");
-        let a = App::new(feed(None, None, None), 3);
-        assert!(a.truecolor && a.theme == 3 && a.status() == "NO DATA");
+        let a = App::new(feed(None, None, None), 2);
+        assert!(a.truecolor && a.theme == 2 && a.status() == "NO DATA");
         std::env::set_var("COLORTERM", "24bit");
         assert!(App::new(feed(None, None, None), 0).truecolor);
         // the command line
         let args = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(parse(&args(&[])), Ok((None, None)));
-        assert_eq!(parse(&args(&["--theme=cyber", "codex"])), Ok((Some("codex".into()), Some(2))));
-        assert_eq!(parse(&args(&["--theme", "synth"])), Ok((None, Some(3))));
+        assert_eq!(parse(&args(&["--theme=herbarium", "codex"])), Ok((Some("codex".into()), Some(2))));
+        assert_eq!(parse(&args(&["--theme", "ember"])), Ok((None, Some(1))));
+        // retired names are taken as their successors
+        assert_eq!(parse(&args(&["--theme=cyber"])), Ok((None, Some(0))));
+        assert_eq!(parse(&args(&["--theme", "analog"])), Ok((None, Some(1))));
         for bad in [vec!["--theme", "neon"], vec!["--theme"], vec!["--theme=neon"], vec!["--bogus"], vec!["gemini"], vec!["claude", "-x"]] {
             assert_eq!(parse(&args(&bad)), Err(64), "{bad:?}");
         }
         assert_eq!(parse(&args(&["--help"])), Err(0));
         assert_eq!(parse(&args(&["-h"])), Err(0));
         assert_eq!(run(&args(&["--bogus"])), 64);
-        assert!(usage().starts_with("usage: pulse-limits tui [grok|claude|codex] [--theme crt|modern|cyber|synth|analog]"));
+        assert!(usage().starts_with("usage: pulse-limits tui [grok|claude|codex] [--theme orbit|ember|herbarium]"));
         drop(s);
     }
 }
