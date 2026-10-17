@@ -3,13 +3,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pulse-null/pulse-limits/releases"><img src="https://img.shields.io/github/v/release/pulse-null/pulse-limits?label=release&color=2ea44f" alt="latest release"></a>
-  <a href="https://github.com/pulse-null/pulse-limits/actions/workflows/ci.yml"><img src="https://github.com/pulse-null/pulse-limits/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
-  <a href="https://coveralls.io/github/pulse-null/pulse-limits?branch=main"><img src="https://coveralls.io/repos/github/pulse-null/pulse-limits/badge.svg?branch=main" alt="coverage"></a>
+  <a href="https://github.com/dnacenta/pulse-limits/releases"><img src="https://img.shields.io/github/v/release/dnacenta/pulse-limits?label=release&color=2ea44f" alt="latest release"></a>
+  <a href="https://github.com/dnacenta/pulse-limits/actions/workflows/ci.yml"><img src="https://github.com/dnacenta/pulse-limits/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+  <a href="https://coveralls.io/github/dnacenta/pulse-limits?branch=main"><img src="https://coveralls.io/repos/github/dnacenta/pulse-limits/badge.svg?branch=main" alt="coverage"></a>
   <img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpulse-null%2Fpulse-limits%2Fmain%2FCargo.toml&query=%24.package.rust-version&label=rust&prefix=%E2%89%A5%20&color=dea584" alt="rust version">
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-informational" alt="platforms">
-  <a href="https://github.com/pulse-null/homebrew-tap"><img src="https://img.shields.io/badge/brew-pulse--null%2Ftap-fbb040?logo=homebrew&logoColor=white" alt="homebrew tap"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/pulse-null/pulse-limits?color=blue" alt="license"></a>
+  <a href="https://github.com/dnacenta/homebrew-tap"><img src="https://img.shields.io/badge/brew-dnacenta%2Ftap-fbb040?logo=homebrew&logoColor=white" alt="homebrew tap"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/dnacenta/pulse-limits?color=blue" alt="license"></a>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@ in a terminal tile.
 Arch, Manjaro, CachyOS, Debian, Ubuntu, Fedora, and Omarchy on any of them:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pulse-null/pulse-limits/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dnacenta/pulse-limits/main/install.sh | bash
 ```
 
 Nothing to edit: the installer puts the ring into your Waybar config and `style.css` (a
@@ -41,7 +41,7 @@ like any other program and rebuild. If Home Manager does not manage your Waybar,
 above works on NixOS too.
 
 ```nix
-inputs.pulse-limits.url = "github:pulse-null/pulse-limits";    # flake.nix
+inputs.pulse-limits.url = "github:dnacenta/pulse-limits";    # flake.nix
 imports = [ inputs.pulse-limits.homeManagerModules.default ];   # home.nix
 programs.pulse-limits.enable = true;                            # home.nix
 ```
@@ -53,7 +53,7 @@ That adds the package, the Waybar entry and its colours. Optional, inside
 ### macOS
 
 ```sh
-brew install pulse-null/tap/pulse-limits && pulse-limits install
+brew install dnacenta/tap/pulse-limits && pulse-limits install
 ```
 
 ## Providers

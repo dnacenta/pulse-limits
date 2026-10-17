@@ -532,7 +532,7 @@ fn print_by_hand(entry: &str) {
 
 fn print_home_manager() {
     println!("On NixOS, declare it with the Home Manager module instead:");
-    println!("  inputs.pulse-limits.url = \"github:pulse-null/pulse-limits\";");
+    println!("  inputs.pulse-limits.url = \"github:dnacenta/pulse-limits\";");
     println!("  imports = [ inputs.pulse-limits.homeManagerModules.default ];");
     println!("  programs.pulse-limits = {{ enable = true; waybar.enable = true; }};");
 }
@@ -674,7 +674,7 @@ pub fn update(lib: &Path, version: &str) -> i32 {
         return 1;
     } else if lib_s.contains("/Cellar/pulse-limits/") || lib_s.contains("/opt/pulse-limits/") {
         println!("installed with Homebrew: upgrading");
-        if !std::process::Command::new("brew").args(["upgrade", "pulse-null/tap/pulse-limits"]).status().map(|s| s.success()).unwrap_or(false) {
+        if !std::process::Command::new("brew").args(["upgrade", "pulse-limits"]).status().map(|s| s.success()).unwrap_or(false) {
             eprintln!("brew upgrade failed");
             return 1;
         }
@@ -690,7 +690,7 @@ pub fn update(lib: &Path, version: &str) -> i32 {
         }
     } else {
         eprintln!("installed by copying the folder: re-run the installer");
-        eprintln!("  curl -fsSL https://raw.githubusercontent.com/pulse-null/pulse-limits/main/install.sh | bash");
+        eprintln!("  curl -fsSL https://raw.githubusercontent.com/dnacenta/pulse-limits/main/install.sh | bash");
         return 1;
     }
     kill_popover();
@@ -955,7 +955,7 @@ mod tests {
         let newbin = fake_bin(&opt.join("bin"), "pulse-limits", "[ \"$1\" = version ] && printf 'v9.9.9\\n'; exit 0");
         let brew = fake_bin(&bin, "brew", "exit 1");
         assert_eq!(update(&opt, "v0.5.6"), 1);
-        assert_eq!(calls(&brew), vec!["upgrade pulse-null/tap/pulse-limits"]);
+        assert_eq!(calls(&brew), vec!["upgrade pulse-limits"]);
         assert!(!newbin.exists());
         fake_bin(&bin, "brew", "");
         fs::write(cache_dir().join("popover.pid"), "1").unwrap();
