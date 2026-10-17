@@ -53,13 +53,8 @@ That adds the package, the Waybar entry and its colours. Optional, inside
 ### macOS
 
 ```sh
-brew tap dnacenta/tap
-brew trust --tap dnacenta/tap
 brew install dnacenta/tap/pulse-limits && pulse-limits install
 ```
-
-Homebrew 7 loads a third-party tap's formulas only after you trust it once; `brew trust`
-does that. Coming from the old `pulse-null/tap`? Run `brew untap pulse-null/tap` first.
 
 ## Providers
 
