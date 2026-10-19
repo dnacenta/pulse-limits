@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds bin/pulse-limits with cargo (https://rustup.rs) and, on macOS, the two AppKit helpers
-# with swiftc (the Xcode Command Line Tools). Safe to re-run.
+# Builds bin/pulse-limits with cargo (https://rustup.rs); on macOS also the two AppKit helpers
+# with swiftc (the Xcode Command Line Tools), on Linux it copies the Python popover. Safe to re-run.
 set -eu
 cd "$(dirname "$0")"
 mkdir -p bin
@@ -15,4 +15,8 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   swiftc -O popover/PulsePopover.swift -o bin/pulse-popover
   swiftc -O menubar/MenuBarImage.swift -o bin/pulse-menubar
   echo "built bin/pulse-popover bin/pulse-menubar"
+else
+  # Linux: the popover is a Python script; its GTK/WebKit modules come from the distro
+  install -m755 popover/pulse-popover.py bin/pulse-popover
+  echo "installed bin/pulse-popover"
 fi

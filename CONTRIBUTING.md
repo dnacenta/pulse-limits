@@ -30,7 +30,9 @@ A pull request that crosses one of these gets a note asking for the change befor
 ## Setup and checks
 
 Rust 1.85 or newer. macOS also needs the Xcode Command Line Tools for the two Swift
-files. Linux needs nothing else.
+files. Linux needs nothing else to build; trying the popover (`popover/pulse-popover.py`)
+takes PyGObject with GTK 3, WebKit2GTK 4.1 and gtk-layer-shell on a Wayland compositor that
+has the layer shell.
 
 ```sh
 ./build.sh                                   # release binary into bin/, swiftc on macOS

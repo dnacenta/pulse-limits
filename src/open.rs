@@ -1,9 +1,10 @@
 //! Shows or hides the monitor. SwiftBar runs this on a left-click of the menu bar item, Waybar
 //! on a click of the module (`pulse-limits open` from a terminal on either).
-//! macOS: the popover (bin/pulse-popover) stays resident for a while; we only launch it if it is
-//! not, and toggle it with SIGUSR1 when it is. Linux: no popover yet; the page opens in the
-//! browser through a one-line redirect file, because xdg-open drops the #fragment of a file://
-//! URL, and the data travels in the fragment.
+//! The popover (bin/pulse-popover: Swift on macOS, Python with GTK and WebKit on Linux) stays
+//! resident for a while; we only launch it if it is not, and toggle it with SIGUSR1 when it is.
+//! Linux also writes a one-line redirect page for the browser, because xdg-open drops the
+//! #fragment of a file:// URL and the data travels in the fragment: the page opens there when
+//! there is no helper, no Wayland, or (the helper decides) no layer shell to drop down from.
 
 use std::fs;
 use std::os::unix::process::CommandExt;
@@ -53,7 +54,12 @@ pub fn open(lib: &Path) -> i32 {
             eprintln!("cannot write {}", opener.display());
             return 1;
         }
-        spawn_detached(Command::new("xdg-open").arg(&opener));
+        if is_executable(&popover) && std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            let pulse = lib.join("bin").join("pulse-limits");
+            spawn_detached(Command::new(&popover).args([POPOVER_W.to_string(), POPOVER_H.to_string()]).arg(pulse));
+        } else {
+            spawn_detached(Command::new("xdg-open").arg(&opener));
+        }
     }
     0
 }
@@ -129,9 +135,10 @@ mod tests {
         child.wait().unwrap();
         std::thread::sleep(Duration::from_millis(50));
         assert_eq!(calls(&pop_log).len(), 2, "the second run is the resident one, not a launch");
-        // Linux: a redirect page in the cache and xdg-open on it
+        // Linux without a Wayland session: a redirect page in the cache and xdg-open on it, helper or not
         drop(_mac);
         let _linux = pretend(false);
+        vars.unset("WAYLAND_DISPLAY");
         fs::remove_file(&pidfile).unwrap();
         assert_eq!(open(&lib), 0);
         let opener = cache.join("open.html");
@@ -141,6 +148,19 @@ mod tests {
             fs::read_to_string(&opener).unwrap(),
             "<!doctype html><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0;url=file:///x/panel.html#abc\"><title>PulseLimits</title><a href=\"file:///x/panel.html#abc\">PulseLimits</a>\n"
         );
+        // on Wayland: the helper, with the popover size and the binary it runs; the page is still
+        // written, for the helper to fall back on, and the browser stays shut
+        fake_bin(&lib.join("bin"), "pulse-popover", "");
+        vars.set("WAYLAND_DISPLAY", "wayland-test");
+        fs::remove_file(&opener).unwrap();
+        assert_eq!(open(&lib), 0);
+        assert!(opener.is_file());
+        let t0 = std::time::Instant::now();
+        while calls(&pop_log).len() < 3 && t0.elapsed() < Duration::from_secs(3) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(calls(&pop_log)[2], format!("{POPOVER_W} {POPOVER_H} {}", lib.join("bin").join("pulse-limits").display()));
+        assert_eq!(calls(&xdg_log).len(), 1);
         // the page cannot be written
         fs::remove_file(&opener).unwrap();
         fs::create_dir(&opener).unwrap();
