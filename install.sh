@@ -6,8 +6,9 @@
 #   ./install.sh --uninstall
 #
 # Linux: installs what is missing with your package manager (git, curl, a C linker, procps,
-# xdg-utils; Waybar when you are on a Wayland session without one), Rust with rustup when
-# there is no cargo, the Nerd Font symbols when no Nerd Font is installed, then clones (or
+# xdg-utils; on a Wayland session Waybar when there is none, and the popover's GTK, WebKit2GTK
+# and gtk-layer-shell), Rust with rustup when there is no cargo, the Nerd Font symbols when no
+# Nerd Font is installed, then clones (or
 # updates) the repo into ~/.local/share/pulse-limits, builds, links the command into
 # ~/.local/bin and wires Waybar (`pulse-limits bar on`). On a box with Nix it
 # just installs the flake. macOS: Homebrew is the package (`brew install
@@ -103,6 +104,31 @@ linux_packages() {
   esac || die "package install failed (run with PULSE_LIMITS_NO_SUDO=1 to only be told what is missing)"
 }
 
+# The popover (bin/pulse-popover) is Python on GTK 3, WebKit2GTK 4.1 and gtk-layer-shell. Only
+# on Wayland, where it can drop down from the bar; without it the monitor opens in the browser,
+# so a failure here is a warning, not the end of the install.
+linux_popover_packages() {
+  [[ "${XDG_SESSION_TYPE:-}" == "wayland" || -n "${WAYLAND_DISPLAY:-}" ]] || return 0
+  have python3 && python3 -c 'import gi
+for ns, v in (("Gtk", "3.0"), ("WebKit2", "4.1"), ("GtkLayerShell", "0.1")): gi.require_version(ns, v)
+from gi.repository import Gtk, WebKit2, GtkLayerShell' >/dev/null 2>&1 && return 0
+  local id like; id=$(. /etc/os-release 2>/dev/null && echo "${ID:-}"); like=$(. /etc/os-release 2>/dev/null && echo "${ID_LIKE:-}")
+  say "Installing the popover's packages (GTK, WebKit2GTK, gtk-layer-shell, PyGObject)"
+  case " $id $like " in
+    *" arch "*|*" archlinux "*|*" manjaro "*|*" cachyos "*)
+      as_root pacman -S --needed --noconfirm python-gobject webkit2gtk-4.1 gtk-layer-shell ;;
+    *" debian "*|*" ubuntu "*)
+      as_root apt-get install -y -qq python3-gi gir1.2-webkit2-4.1 gir1.2-gtklayershell-0.1 ;;
+    *" fedora "*|*" rhel "*|*" centos "*)
+      as_root dnf install -y python3-gobject webkit2gtk4.1 gtk-layer-shell ;;
+    *" opensuse "*|*" suse "*)
+      as_root zypper install -y python3-gobject-Gdk typelib-1_0-WebKit2-4_1 typelib-1_0-GtkLayerShell-0_1 ;;
+    *" alpine "*)
+      as_root apk add py3-gobject3 webkit2gtk-4.1 gtk-layer-shell ;;
+    *) false ;;
+  esac || warn "could not install the popover's packages; the monitor opens in the browser until they are (pulse-limits doctor says which)"
+}
+
 # The Waybar ring uses Nerd Font glyphs; the symbols-only font is 3 MB and lives in ~/.local/share/fonts.
 ensure_nerd_font() {
   have fc-list && fc-list 2>/dev/null | grep -qi 'nerd' && return
@@ -144,7 +170,7 @@ if [[ "$OS" != "Darwin" ]] && have nix && ! have cargo; then
 fi
 
 # --- prerequisites -------------------------------------------------------------------
-if [[ "$OS" == "Darwin" ]]; then mac_prereqs; else linux_packages; fi
+if [[ "$OS" == "Darwin" ]]; then mac_prereqs; else linux_packages; linux_popover_packages; fi
 ensure_rust
 
 # --- code ---------------------------------------------------------------------------------

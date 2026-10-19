@@ -10,7 +10,7 @@ use crate::activity;
 use crate::bar::{plugin_dir, waybar_dir, waybar_module, PLUGIN};
 use crate::payload::{self, PANEL_INTERVAL};
 use crate::providers::{self, bad, ok, say};
-use crate::util::{command_output, is_macos, iso_utc, local_offset, local_stamp, now, process_running, short, tilde, which};
+use crate::util::{command_output, is_executable, is_macos, iso_utc, local_offset, local_stamp, now, process_running, short, tilde, which};
 
 pub fn run(lib: &Path, version: &str) -> i32 {
     run_on(lib, version, is_macos())
@@ -96,6 +96,22 @@ fn run_on(lib: &Path, version: &str, macos: bool) -> i32 {
             }
             Ok(_) => bad(&format!("{} does not include the module yet (pulse-limits bar on adds it)", cfg.display())),
             Err(_) => bad(&format!("no Waybar config at {}", waybar_dir().display())),
+        }
+        say("popover");
+        let helper = lib.join("bin").join("pulse-popover");
+        if !is_executable(&helper) {
+            bad("bin/pulse-popover missing (run ./build.sh): the monitor opens in the browser");
+        } else {
+            // the helper knows best what it needs: GTK, WebKit2GTK, gtk-layer-shell, a layer shell
+            let (good, line) = match std::process::Command::new(&helper).arg("--check").stdin(std::process::Stdio::null()).output() {
+                Ok(o) => (o.status.success(), String::from_utf8_lossy(&o.stdout).trim().to_string()),
+                Err(e) => (false, format!("bin/pulse-popover does not run: {e}")),
+            };
+            if good {
+                ok(&line);
+            } else {
+                bad(&line);
+            }
         }
     }
     say("providers");
@@ -227,7 +243,7 @@ mod tests {
         assert!(out.contains(" pulse-limits vTEST\n"), "{out}");
         assert!(out.contains(&format!("  ok       pgrep: {}\n", s.bin().join("pgrep").display())), "{out}");
         assert!(out.contains("  PROBLEM  bin/pulse-limits missing"), "{out}");
-        assert!(!out.contains("bin/pulse-popover"), "{out}");
+        assert!(out.contains("popover\n  PROBLEM  bin/pulse-popover missing (run ./build.sh): the monitor opens in the browser\n"), "{out}");
         assert!(
             out.contains(&format!(
                 "waybar\n  PROBLEM  waybar not running\n  PROBLEM  module file not written (run: pulse-limits bar on)\n  PROBLEM  no Waybar config at {}\n",
@@ -249,6 +265,23 @@ mod tests {
             run_on(&lib, "vTEST", false);
         });
         assert!(out.contains(&format!("  ok       module file: {}\n  ok       {} includes the module\n", waybar_module().display(), cfg.display())), "{out}");
+        // the helper's own verdict, good and bad, and one that cannot even start
+        let bin = lib.join("bin");
+        crate::util::testing::fake_bin(&bin, "pulse-popover", "echo 'GTK, WebKit2GTK and gtk-layer-shell: the monitor drops down from the bar'");
+        let out = capture(|| {
+            run_on(&lib, "vTEST", false);
+        });
+        assert!(out.contains("popover\n  ok       GTK, WebKit2GTK and gtk-layer-shell: the monitor drops down from the bar\n"), "{out}");
+        crate::util::testing::fake_bin(&bin, "pulse-popover", "echo 'missing WebKit2: the monitor opens in the browser'; exit 1");
+        let out = capture(|| {
+            run_on(&lib, "vTEST", false);
+        });
+        assert!(out.contains("popover\n  PROBLEM  missing WebKit2: the monitor opens in the browser\n"), "{out}");
+        std::fs::write(bin.join("pulse-popover"), "#!/nonexistent/interpreter\n").unwrap();
+        let out = capture(|| {
+            run_on(&lib, "vTEST", false);
+        });
+        assert!(out.contains("popover\n  PROBLEM  bin/pulse-popover does not run: "), "{out}");
         drop(s);
     }
 }

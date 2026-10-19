@@ -21,7 +21,9 @@
           inherit version;
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [ pkgs.makeWrapper ];
+          nativeBuildInputs = [ pkgs.makeWrapper ]
+            ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.wrapGAppsHook3 pkgs.gobject-introspection ];
+          buildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.gtk3 pkgs.webkitgtk_4_1 pkgs.gtk-layer-shell ];
           # The binary finds panel.html and the SwiftBar shims one folder up from itself, so it
           # lives in libexec/pulse-limits/bin with them, and bin/ carries a symlink; pgrep and
           # xdg-open are what it shells out to on Linux. The Swift helpers are macOS/Homebrew only.
@@ -32,6 +34,17 @@
             install -Dm755 -t $out/libexec/pulse-limits pulse-limits.1m.sh pulse-limits.5m.sh
             ln -s ../libexec/pulse-limits/bin/pulse-limits $out/bin/pulse-limits
             wrapProgram $out/libexec/pulse-limits/bin/pulse-limits --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.procps pkgs.xdg-utils ]}
+          '' + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+            # The Linux popover: the script under popover/bin (its command line still matches the
+            # `pkill -f bin/pulse-popover` of `bar off`), a GApps wrapper where `open` looks for it.
+            install -Dm755 popover/pulse-popover.py $out/libexec/pulse-limits/popover/bin/pulse-popover
+            sed -i "1s|.*|#!${pkgs.python3.withPackages (p: [ p.pygobject3 ])}/bin/python3|" $out/libexec/pulse-limits/popover/bin/pulse-popover
+          '';
+          # Our own wrapper for the popover only: the binary needs no GTK environment.
+          dontWrapGApps = true;
+          postFixup = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+            makeWrapper $out/libexec/pulse-limits/popover/bin/pulse-popover $out/libexec/pulse-limits/bin/pulse-popover \
+              "''${gappsWrapperArgs[@]}" --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.xdg-utils ]}
           '';
           doCheck = false; # the unit tests bind local sockets; run `cargo test` in a checkout
           meta = with pkgs.lib; {
